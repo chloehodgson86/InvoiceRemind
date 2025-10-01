@@ -3,36 +3,32 @@ import React, { useMemo, useState, useEffect, useCallback } from "react";
 import Papa from "papaparse";
 import JSZip from "jszip";
 import * as RC from "recharts";
-// Branding (edit to your taste)
+
+/* ---------------- Branding ---------------- */
 const BRAND = {
   name: "Paramount Liquor",
   dept: "Accounts Receivable",
-  primary: "#0f172a",   // header background
-  accent:  "#0ea5e9",   // button color
-  border:  "#e5e7eb",
-  subtle:  "#f8fafc",
-  text:    "#0f172a",
-  muted:   "#475569",
-  footer:  "#64748b",
-  // Put your logo file in /public/logo.png OR use a hosted URL
-  logoUrl: "/logo.png", // e.g. /public/logo.png in Vercel/CodeSandbox
+  primary: "#0f172a",
+  accent: "#0ea5e9",
+  border: "#e5e7eb",
+  subtle: "#f8fafc",
+  text: "#0f172a",
+  muted: "#475569",
+  footer: "#64748b",
+  logoUrl: "/logo.png", // put logo file in /public/logo.png
 };
 
-/* ---------------- Date helpers for aging ---------------- */
+/* ---------------- Helpers ---------------- */
 function toDate(v) {
   if (!v) return null;
   const d = new Date(v);
   return isNaN(d.getTime()) ? null : d;
 }
-
-const K = {
-  customer: "__customer",
-  email: "__email",
-  invoice: "__invoice",
-  amount: "__amount",
-  dueDate: "__dueDate",
-};
-
+function daysOverdue(due, base = new Date()) {
+  const d = toDate(due);
+  if (!d) return 0;
+  return Math.floor((base - d) / (1000 * 60 * 60 * 24));
+}
 function money(n) {
   const abs = Math.abs(n).toLocaleString(undefined, {
     minimumFractionDigits: 2,
@@ -40,84 +36,10 @@ function money(n) {
   });
   return n < 0 ? `- $${abs}` : `$${abs}`;
 }
-
-function pick(row, map, key) {
-  if (!row) return undefined;
-  const canonKey = K?.[key];
-  if (canonKey && Object.prototype.hasOwnProperty.call(row, canonKey)) {
-    return row[canonKey];
-  }
-  const mappedKey = map?.[key];
-  if (mappedKey && Object.prototype.hasOwnProperty.call(row, mappedKey)) {
-    return row[mappedKey];
-  }
-  return undefined;
-}
-
-function daysOverdue(due, base = new Date()) {
-  const d = toDate(due);
-  if (!d) return 0;
-  return Math.floor((base - d) / (1000 * 60 * 60 * 24));
-}
-
-/* ---------------- Templates ---------------- */
-const TEMPLATES = {
-  Friendly: `Dear {{Customer}},
-
-The following invoices are currently overdue:
-
-{{InvoiceLines}}
-
-Total overdue:  {{TotalOverdue}}
-{{CreditsSection}}
-
-If you've already paid, please ignore this. Otherwise, could you let us know the expected date of payment?
-
-Kind regards,
-Accounts Receivable`,
-
-  Firm: `Hello {{Customer}},
-
-Despite previous reminders, the following invoices remain overdue:
-
-{{InvoiceLines}}
-
-Total overdue:  {{TotalOverdue}}
-{{CreditsSection}}
-
-Please arrange payment today or reply with your remittance advice and pay date.
-
-Regards,
-Accounts Receivable`,
-
-  "Final Notice": `FINAL NOTICE – {{Customer}}
-
-Your account is on hold due to the overdue balance below:
-
-{{InvoiceLines}}
-
-Total overdue:  {{TotalOverdue}}
-{{CreditsSection}}
-
-Unless full payment is received within 3 business days, we may suspend further supply.
-
-Accounts Receivable`,
-};
-
-/* ---------------- CSV helpers ---------------- */
-const PRESETS = {
-  customer: ["customer", "customer name", "account name", "client", "client name", "trading name"],
-  email: ["email", "e-mail", "email address", "contact email"],
-  invoice: ["invoice", "invoice number", "invoice #", "inv#", "doc", "document", "invoice id", "invoiceid", "inv id"],
-  amount: ["amount", "total", "debit", "balance", "amount due", "outstanding", "total overdue", "overdue total", "total_overdue"],
-  dueDate: ["duedate", "due date", "due", "terms date"],
-};
-
 function cleanNumber(v) {
   if (v == null || v === "") return 0;
   let s = String(v).trim().toUpperCase();
   let negative = false;
-
   if (s.startsWith("(") && s.endsWith(")")) {
     negative = true;
     s = s.slice(1, -1).trim();
@@ -126,24 +48,25 @@ function cleanNumber(v) {
     negative = true;
     s = s.slice(1).trim();
   }
-  if (/[+-]$/.test(s)) {
-    if (s.endsWith("-")) negative = true;
-    s = s.replace(/[+-]$/, "").trim();
-  }
   if (/\bCR\b/.test(s)) negative = true;
-
   s = s.replace(/[^0-9.,]/g, "");
   if (s.includes(",") && s.includes(".")) {
     s = s.replace(/,/g, "");
   } else if (s.includes(",") && !s.includes(".")) {
     s = s.replace(/,/g, ".");
   }
-
   const n = Number(s || 0);
-  const val = Number.isFinite(n) ? n : 0;
-  return negative ? -val : val;
+  return negative ? -n : n;
 }
 
+/* ---------------- CSV mapping ---------------- */
+const PRESETS = {
+  customer: ["customer", "customer name", "account name", "client", "trading name"],
+  email: ["email", "e-mail", "email address"],
+  invoice: ["invoice", "invoice number", "invoice #", "doc"],
+  amount: ["amount", "total", "balance", "amount due", "outstanding"],
+  dueDate: ["duedate", "due date", "due"],
+};
 function autoMap(headers) {
   const hLow = headers.map((h) => String(h).toLowerCase());
   const pick = (list) => {
@@ -166,15 +89,102 @@ function autoMap(headers) {
   };
 }
 
-function buildEmlFile(to, subject, body) {
-  const headers = [
-    "MIME-Version: 1.0",
-    `To: ${to}`,
-    `Subject: ${subject}`,
-    "Content-Type: text/plain; charset=UTF-8",
-    "Content-Transfer-Encoding: 8bit",
-  ].join("\r\n");
-  return `${headers}\r\n\r\n${body.replace(/\n/g, "\r\n")}\r\n`;
+/* ---------------- HTML email template ---------------- */
+function htmlEmailTemplate({
+  customerName,
+  subject,
+  overdueRows,
+  creditRows,
+  totalOverdue,
+  totalCredits,
+  netPayable,
+  replyTo,
+  templateLabel = "",
+}) {
+  const invRows = overdueRows.map(r => `
+    <tr>
+      <td style="padding:10px 12px;border-bottom:1px solid ${BRAND.border};">${r.inv}</td>
+      <td style="padding:10px 12px;border-bottom:1px solid ${BRAND.border};text-align:right;">${money(r.amt)}</td>
+      <td style="padding:10px 12px;border-bottom:1px solid ${BRAND.border};text-align:right;">${r.due}</td>
+    </tr>
+  `).join("");
+
+  const creditSection = creditRows.length ? `
+    <h3 style="margin:24px 0 8px 0;font-size:16px;color:${BRAND.text};">Unapplied credits</h3>
+    <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;background:#fff;border:1px solid ${BRAND.border};border-radius:8px;overflow:hidden;">
+      <thead>
+        <tr style="background:${BRAND.subtle};">
+          <th align="left" style="padding:10px 12px;font-size:12px;color:${BRAND.muted};">Reference</th>
+          <th align="right" style="padding:10px 12px;font-size:12px;color:${BRAND.muted};">Amount</th>
+          <th align="right" style="padding:10px 12px;font-size:12px;color:${BRAND.muted};">Date</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${creditRows.map(cr => `
+          <tr>
+            <td style="padding:10px 12px;border-bottom:1px solid ${BRAND.border};">${cr.ref}</td>
+            <td style="padding:10px 12px;border-bottom:1px solid ${BRAND.border};text-align:right;">${money(cr.amt)}</td>
+            <td style="padding:10px 12px;border-bottom:1px solid ${BRAND.border};text-align:right;">${cr.date}</td>
+          </tr>
+        `).join("")}
+      </tbody>
+    </table>
+  ` : "";
+
+  const replyHref = replyTo ? `mailto:${encodeURIComponent(replyTo)}?subject=${encodeURIComponent(subject)}` : "#";
+
+  return `<!doctype html>
+<html>
+<body style="margin:0;background:#f1f5f9;padding:24px;font-family:Arial,sans-serif;color:${BRAND.text};">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="640" style="max-width:640px;background:#fff;border:1px solid ${BRAND.border};border-radius:12px;overflow:hidden;">
+          <tr>
+            <td style="background:${BRAND.primary};color:#fff;padding:18px 20px;">
+              <span style="font-size:18px;font-weight:700;">${BRAND.name}</span>
+              <span style="font-size:12px;opacity:.85;margin-left:8px;">${BRAND.dept}</span>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:24px;">
+              <p>Dear <strong>${customerName}</strong>,</p>
+              <p>The following invoices are currently overdue:</p>
+              <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid ${BRAND.border};border-radius:8px;">
+                <thead>
+                  <tr style="background:${BRAND.subtle};">
+                    <th align="left">Invoice</th>
+                    <th align="right">Amount</th>
+                    <th align="right">Due Date</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${invRows || `<tr><td colspan="3">(none)</td></tr>`}
+                </tbody>
+              </table>
+              <div style="margin:16px 0;padding:12px;background:${BRAND.subtle};border:1px solid ${BRAND.border};border-radius:8px;">
+                <strong>Total overdue: ${money(totalOverdue)}</strong><br/>
+                ${creditRows.length ? `Credits: ${money(totalCredits)}<br/>Net payable: ${money(netPayable)}` : ""}
+              </div>
+              ${creditSection}
+              <p>If you've already paid, please ignore this. Otherwise, please reply with your remittance advice.</p>
+              <div style="margin:20px 0;">
+                <a href="${replyHref}" style="background:${BRAND.accent};color:#fff;text-decoration:none;padding:10px 16px;border-radius:8px;font-weight:600;">Reply with remittance</a>
+              </div>
+              <p>Kind regards,<br/>${BRAND.dept}<br/>${BRAND.name}</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="text-align:center;color:${BRAND.footer};font-size:12px;padding:12px;">
+              © ${new Date().getFullYear()} ${BRAND.name}
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
 }
 
 /* ---------------- Main App ---------------- */
@@ -182,257 +192,26 @@ export default function App() {
   useEffect(() => {
     document.title = "Overdue Invoice Reminder Generator — by Chloe Hodgson";
   }, []);
-  
+
   const [headers, setHeaders] = useState([]);
   const [rows, setRows] = useState([]);
-  const [map, setMap] = useState({
-    customer: "", invoice: "", amount: "", dueDate: "", email: "",
-  });
-
-  const [tplKey, setTplKey] = useState("Friendly");
-  const [customTpl, setCustomTpl] = useState(TEMPLATES.Friendly);
-
-  // AUTO-GENERATION SETTINGS
-  const [autoGenerate, setAutoGenerate] = useState(false);
-  const [autoAction, setAutoAction] = useState("zip");
-
-  const [dash, setDash] = useState({
-    mailOpened: 0,
-    emlCreated: 0,
-    missingEmail: 0,
-  });
-
+  const [map, setMap] = useState({ customer: "", invoice: "", amount: "", dueDate: "", email: "" });
   const [selected, setSelected] = useState(new Set());
-
-  /* ----------- SENDGRID ADDITIONS ----------- */
   const [sgFrom, setSgFrom] = useState("");
   const [sgReplyTo, setSgReplyTo] = useState("");
   const [sending, setSending] = useState(false);
-  /* ------------------------------------------ */
 
-  // Memoized customer data
-  const customerData = useMemo(() => {
-    if (!rows.length) return { all: [], emailable: [], byName: new Map() };
-    
-    const byName = new Map();
-    
-    // Build customer data map
-    for (const r of rows) {
-      const name = (pick(r, map, "customer") ?? "").toString().trim();
-      if (!name) continue;
-      
-      if (!byName.has(name)) {
-        byName.set(name, { rows: [], email: null, overdueTotal: 0 });
-      }
-      
-      const data = byName.get(name);
-      data.rows.push(r);
-      
-      const amt = cleanNumber(pick(r, map, "amount"));
-      if (amt > 0) data.overdueTotal += amt;
-      
-      if (!data.email) {
-        const email = (pick(r, map, "email") ?? "").toString().trim();
-        if (email) data.email = email;
-      }
-    }
-    
-    const all = Array.from(byName.keys());
-    const emailable = all.filter(name => {
-      const data = byName.get(name);
-      return data.overdueTotal > 0;
-    });
-    
-    return { all, emailable, byName };
-  }, [rows, map]);
-
-  // Generate email function
-  const generateEmail = useCallback((customerName) => {
-  const data = customerData.byName.get(customerName);
-  if (!data) return null;
-
-  const custRows = data.rows;
-  const overdueRows = custRows
-    .filter(r => cleanNumber(pick(r, map, "amount")) > 0)
-    .map(r => ({
-      inv:  pick(r, map, "invoice") ?? "",
-      due:  pick(r, map, "dueDate") ?? "",
-      amt:  cleanNumber(pick(r, map, "amount")),
-    }));
-
-  const creditRows = custRows
-    .filter(r => cleanNumber(pick(r, map, "amount")) < 0)
-    .map(r => ({
-      ref:  pick(r, map, "invoice") ?? "",
-      date: pick(r, map, "dueDate") ?? "",
-      amt:  cleanNumber(pick(r, map, "amount")),
-    }));
-
-  const overdueLinesText = overdueRows.map(r => `- Invoice ${r.inv} — ${money(r.amt)} due ${r.due}`).join("\n");
-  const creditLinesText  = creditRows.map(r => `- Credit ${r.ref} — ${money(r.amt)} dated ${r.date}`).join("\n");
-
-  const totalOverdue = overdueRows.reduce((s, r) => s + r.amt, 0);
-  const totalCredits = creditRows.reduce((s, r) => s + Math.abs(r.amt), 0);
-  const netPayable   = totalOverdue - totalCredits;
-
-  const contact = data.email || "";
-  const subject = `Paramount Liquor Overdue Invoices - ${customerName}`;
-
-  const chosen = tplKey === "Custom" ? customTpl : TEMPLATES[tplKey] || TEMPLATES.Friendly;
-  const creditsSection = creditRows.length ? `
-  Unapplied credits (available to offset):
-  ${creditLinesText}
-
-  Total credits: ${money(totalCredits)}
-
-  Net amount now due: ${money(netPayable)}
-
-  ` : "";
-
-  const textBody = chosen
-    .replaceAll("{{Customer}}", customerName)
-    .replaceAll("{{InvoiceLines}}", overdueLinesText || "(none)")
-    .replaceAll("{{TotalOverdue}}", money(totalOverdue))
-    .replaceAll("{{CreditsSection}}", creditsSection);
-
-  const htmlBody = htmlEmailTemplate({
-    customerName,
-    subject,
-    overdueRows,
-    creditRows,
-    totalOverdue,
-    totalCredits,
-    netPayable,
-    replyTo: null,                    // injected when sending
-    templateLabel: tplKey === "Custom" ? "Custom" : tplKey,
-  });
-
-  return { contact, subject, body: textBody, html: htmlBody };
-}, [customerData, map, tplKey, customTpl]);
-
-  // Bulk mailto
-  const openSelectedMailto = useCallback(async (customerList) => {
-    const list = customerList || Array.from(selected);
-    if (!list.length) return;
-    
-    const delay = (ms) => new Promise((r) => setTimeout(r, ms));
-    let opened = 0, missing = 0;
-
-    for (const name of list) {
-      const email = generateEmail(name);
-      if (!email || !email.contact) {
-        missing++;
-        continue;
-      }
-      window.open(
-        `mailto:${encodeURIComponent(email.contact)}?subject=${encodeURIComponent(email.subject)}&body=${encodeURIComponent(email.body)}`,
-        "_blank"
-      );
-      opened++;
-      await delay(300);
-    }
-    
-    setDash((d) => ({ ...d, mailOpened: d.mailOpened + opened, missingEmail: d.missingEmail + missing }));
-  }, [selected, generateEmail]);
-
-  // Bulk ZIP
-  const downloadSelectedAsZip = useCallback(async (customerList) => {
-    const list = customerList || Array.from(selected);
-    if (!list.length) return;
-    
-    const zip = new JSZip();
-    for (const name of list) {
-      const email = generateEmail(name);
-      if (!email) continue;
-      const eml = buildEmlFile(email.contact || "", email.subject, email.body);
-      const filename = `${name.replace(/[^a-z0-9]/gi, "_")}.eml`;
-      zip.file(filename, eml, { compression: "STORE" });
-    }
-
-    const blob = await zip.generateAsync({ type: "blob" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "overdue_emails_selected.zip";
-    a.click();
-    URL.revokeObjectURL(url);
-    setDash((d) => ({ ...d, emlCreated: d.emlCreated + list.length }));
-  }, [selected, generateEmail]);
-
-  /* ----------- SENDGRID: bulk send function ----------- */
-  const sendSelectedViaSendGrid = useCallback(async (customerList) => {
-    const list = customerList || Array.from(selected);
-    if (!list.length) return;
-
-    if (!sgFrom) {
-      alert("Enter a 'From' address verified in SendGrid.");
-      return;
-    }
-
-    setSending(true);
-    let ok = 0, fail = 0, skipped = 0;
-
-    for (const name of list) {
-      const email = generateEmail(name);
-      if (!email || !email.contact) { skipped++; continue; }
-
-      try {
-        const res = await fetch("/api/sendgrid-send", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            to: email.contact,
-            subject: email.subject,
-            text: email.body,
-            from: sgFrom,
-            replyTo: sgReplyTo || undefined,
-          }),
-        });
-        if (res.ok) ok++; else fail++;
-        // polite rate limiting
-        await new Promise(r => setTimeout(r, 150));
-      } catch {
-        fail++;
-      }
-    }
-const personalizedHtml = email.html.replace(
-  'href="#"',
-  `href="mailto:${encodeURIComponent(sgReplyTo || "")}?subject=${encodeURIComponent(email.subject)}"`
-);
-
-await fetch("/api/sendgrid-send", {
-  method: "POST",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({
-    to: email.contact,
-    subject: email.subject,
-    text: email.body,          // plain text alternative
-    html: personalizedHtml,    // branded HTML
-    from: sgFrom,
-    replyTo: sgReplyTo || undefined,
-  }),
-});
-
-    setSending(false);
-    alert(`Send complete. Success: ${ok}, Failed: ${fail}, Skipped (no email): ${skipped}`);
-  }, [selected, generateEmail, sgFrom, sgReplyTo]);
-  /* ----------------------------------------------------- */
-
-  // CSV upload
+  // Parse CSV
   function handleUpload(e) {
     const file = e.target.files?.[0];
     if (!file) return;
-
     const buffer = [];
     let headersSet = false;
     let guessed = null;
 
     Papa.parse(file, {
       header: true,
-      worker: true,
       skipEmptyLines: true,
-      dynamicTyping: true,
-      chunkSize: 1024 * 256,
       chunk: ({ data, meta }) => {
         if (!headersSet) {
           const hdrs = meta?.fields || Object.keys(data[0] || {});
@@ -441,450 +220,142 @@ await fetch("/api/sendgrid-send", {
           setMap(guessed);
           headersSet = true;
         }
-
         for (const r of data) {
-          const name = (r[guessed.customer] ?? "").toString().trim();
-          if (!name) continue;
-          const amt = cleanNumber(r[guessed.amount]);
-          if (!amt) continue;
-
-          buffer.push({
-            [K.customer]: r[guessed.customer],
-            [K.email]: r[guessed.email],
-            [K.invoice]: r[guessed.invoice],
-            [K.amount]: r[guessed.amount],
-            [K.dueDate]: r[guessed.dueDate],
-          });
+          buffer.push(r);
         }
       },
-      complete: () => {
-        setRows(buffer);
-        setSelected(new Set());
-      },
-      error: (err) => {
-        console.error(err);
-        alert("CSV parse error: " + (err?.message || err));
-      },
+      complete: () => setRows(buffer),
     });
   }
 
-  // Auto-generate effect - triggers after customerData updates
-  useEffect(() => {
-    if (!autoGenerate || customerData.emailable.length === 0) return;
-    
-    // Select all emailable customers
-    setSelected(new Set(customerData.emailable));
-    
-    // Execute auto-action
-    const execute = async () => {
-      await new Promise(resolve => setTimeout(resolve, 200));
-      
-      if (autoAction === "mailto") {
-        await openSelectedMailto(customerData.emailable);
-      } else {
-        await downloadSelectedAsZip(customerData.emailable);
-      }
-    };
-    
-    execute();
-  }, [customerData.emailable.length]); // Only trigger when data changes
-
-  // Dashboard data
-  const dashboard = useMemo(() => {
-    const per = new Map();
-
+  // Group by customer
+  const customerData = useMemo(() => {
+    const byName = new Map();
     for (const r of rows) {
-      const name = (pick(r, map, "customer") ?? "").toString().trim();
+      const name = (r[map.customer] ?? "").toString().trim();
       if (!name) continue;
-
-      const amt = cleanNumber(pick(r, map, "amount"));
-      const due = pick(r, map, "dueDate") ?? "";
-      const d = daysOverdue(due);
-
-      const cur = per.get(name) || { total: 0, count: 0, oldestDue: due, oldestDays: d };
-      cur.total += amt || 0;
-      cur.count += 1;
-
-      if (d > (cur.oldestDays ?? 0)) {
-        cur.oldestDays = d;
-        cur.oldestDue = due;
-      }
-
-      per.set(name, cur);
+      if (!byName.has(name)) byName.set(name, { rows: [], email: r[map.email] || "" });
+      byName.get(name).rows.push(r);
     }
+    return { all: Array.from(byName.keys()), byName };
+  }, [rows, map]);
 
-    let totalOverdueAll = 0;
-    let withEmail = 0;
+  // Generate email
+  const generateEmail = useCallback((customerName) => {
+    const data = customerData.byName.get(customerName);
+    if (!data) return null;
 
-    for (const name of customerData.all) {
-      const agg = per.get(name);
-      if (agg) totalOverdueAll += Math.max(0, agg.total);
+    const custRows = data.rows;
+    const overdueRows = custRows.filter(r => cleanNumber(r[map.amount]) > 0)
+      .map(r => ({ inv: r[map.invoice], due: r[map.dueDate], amt: cleanNumber(r[map.amount]) }));
+    const creditRows = custRows.filter(r => cleanNumber(r[map.amount]) < 0)
+      .map(r => ({ ref: r[map.invoice], date: r[map.dueDate], amt: cleanNumber(r[map.amount]) }));
 
-      const data = customerData.byName.get(name);
-      if (data?.email) withEmail++;
+    const totalOverdue = overdueRows.reduce((s, r) => s + r.amt, 0);
+    const totalCredits = creditRows.reduce((s, r) => s + Math.abs(r.amt), 0);
+    const netPayable = totalOverdue - totalCredits;
+
+    const subject = `Paramount Liquor Overdue Invoices - ${customerName}`;
+    const textBody = `Dear ${customerName},
+
+The following invoices are overdue:
+
+${overdueRows.map(r => `- ${r.inv} ${money(r.amt)} due ${r.due}`).join("\n")}
+
+Total overdue: ${money(totalOverdue)}
+
+Kind regards,
+${BRAND.dept}`;
+
+    const htmlBody = htmlEmailTemplate({
+      customerName,
+      subject,
+      overdueRows,
+      creditRows,
+      totalOverdue,
+      totalCredits,
+      netPayable,
+      replyTo: sgReplyTo,
+    });
+
+    return { contact: data.email, subject, body: textBody, html: htmlBody };
+  }, [customerData, map, sgReplyTo]);
+
+  // Send via SendGrid
+  const sendSelectedViaSendGrid = useCallback(async () => {
+    const list = Array.from(selected);
+    if (!list.length) return;
+    if (!sgFrom) {
+      alert("Enter a From address verified in SendGrid.");
+      return;
     }
+    setSending(true);
+    let ok = 0, fail = 0, skipped = 0;
 
-    const buckets = { "0–30": 0, "31–60": 0, "61+": 0 };
-    for (const [, agg] of per) {
-      const d = agg.oldestDays || 0;
-      if (d <= 30) buckets["0–30"] += Math.max(0, agg.total);
-      else if (d <= 60) buckets["31–60"] += Math.max(0, agg.total);
-      else buckets["61+"] += Math.max(0, agg.total);
+    for (const name of list) {
+      const email = generateEmail(name);
+      if (!email || !email.contact) { skipped++; continue; }
+      try {
+        const res = await fetch("/api/sendgrid-send", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            to: email.contact,
+            subject: email.subject,
+            text: email.body,
+            html: email.html,
+            from: sgFrom,
+            replyTo: sgReplyTo || undefined,
+          }),
+        });
+        if (res.ok) ok++; else fail++;
+      } catch { fail++; }
+      await new Promise(r => setTimeout(r, 150));
     }
-
-    const pie = Object.entries(buckets).map(([name, value]) => ({
-      name,
-      value: Number(value.toFixed(2)),
-    }));
-
-    const top = [...per.entries()]
-      .map(([name, agg]) => ({ name, total: Number(Math.max(0, agg.total).toFixed(2)) }))
-      .sort((a, b) => b.total - a.total)
-      .slice(0, 10);
-
-    return {
-      totals: {
-        customers: customerData.all.length,
-        withEmail,
-        selected: selected.size,
-        totalOverdueAll: Number(totalOverdueAll.toFixed(2)),
-      },
-      pie,
-      top,
-    };
-  }, [rows, map, customerData, selected.size]);
-
-  const allSelected = selected.size === customerData.emailable.length && customerData.emailable.length > 0;
+    setSending(false);
+    alert(`Done. Success: ${ok}, Fail: ${fail}, Skipped: ${skipped}`);
+  }, [selected, generateEmail, sgFrom, sgReplyTo]);
 
   return (
-    <div style={{ padding: 20, fontFamily: "Inter, system-ui, sans-serif" }}>
+    <div style={{ padding: 20 }}>
       <h1>Overdue Invoice Reminder Generator</h1>
-
-      {/* AUTO-GENERATION CONTROLS */}
-      <div style={{
-        background: "#f0f9ff",
-        border: "2px solid #0284c7",
-        borderRadius: 12,
-        padding: 16,
-        marginBottom: 16
-      }}>
-        <div style={{ fontWeight: 600, marginBottom: 12, fontSize: 16 }}>
-          🤖 Auto-Generation Settings
-        </div>
-        <div style={{ display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap" }}>
-          <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <input
-              type="checkbox"
-              checked={autoGenerate}
-              onChange={(e) => setAutoGenerate(e.target.checked)}
-            />
-            <span>Enable auto-generation on CSV upload</span>
-          </label>
-          
-          {autoGenerate && (
-            <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span>Auto-action:</span>
-              <select
-                value={autoAction}
-                onChange={(e) => setAutoAction(e.target.value)}
-                style={{
-                  padding: 6,
-                  borderRadius: 6,
-                  border: "1px solid #0284c7",
-                  background: "white"
-                }}
-              >
-                <option value="zip">Download ZIP (all emails)</option>
-                <option value="mailto">Open mailto links</option>
-              </select>
-            </label>
-          )}
-        </div>
-        {autoGenerate && (
-          <div style={{ 
-            marginTop: 8, 
-            fontSize: 13, 
-            color: "#0369a1",
-            fontStyle: "italic" 
-          }}>
-            ✨ Emails will be auto-generated immediately after uploading CSV
-          </div>
-        )}
-      </div>
-
       <input type="file" accept=".csv" onChange={handleUpload} />
 
-      {/* Mapping panel */}
-      {headers.length > 0 && (
-        <div style={{ marginTop: 16, border: "1px solid #eee", borderRadius: 12, padding: 12 }}>
-          <div style={{ fontWeight: 600, marginBottom: 8 }}>Map your CSV columns</div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 }}>
-            {[
-              ["customer", "Customer (required)"],
-              ["email", "Email (optional)"],
-              ["invoice", "Invoice # (required)"],
-              ["amount", "Amount (required)"],
-              ["dueDate", "Due Date (required)"],
-            ].map(([key, label]) => (
-              <label key={key} style={{ display: "grid", gap: 6, fontSize: 12 }}>
-                <span>{label}</span>
-                <select
-                  value={map[key]}
-                  onChange={(e) => setMap((m) => ({ ...m, [key]: e.target.value }))}
-                  style={{ padding: 8, borderRadius: 8, border: "1px solid #ddd" }}
-                >
-                  <option value="">— choose a header —</option>
-                  {headers.map((h) => (
-                    <option key={h} value={h}>{h}</option>
-                  ))}
-                </select>
-              </label>
-            ))}
-          </div>
-
-          <div style={{ marginTop: 12 }}>
-            <label>
-              Template:&nbsp;
-              <select value={tplKey} onChange={(e) => setTplKey(e.target.value)}>
-                {Object.keys(TEMPLATES).map((k) => (
-                  <option key={k} value={k}>{k}</option>
-                ))}
-                <option value="Custom">Custom…</option>
-              </select>
-            </label>
-          </div>
-
-          {tplKey === "Custom" && (
-            <textarea
-              value={customTpl}
-              onChange={(e) => setCustomTpl(e.target.value)}
-              placeholder="Use {{Customer}}, {{InvoiceLines}}, {{TotalOverdue}}, {{CreditsSection}}"
-              rows={6}
-              style={{
-                width: "100%",
-                marginTop: 8,
-                padding: 10,
-                borderRadius: 8,
-                border: "1px solid #ddd",
-                fontFamily: "inherit",
-              }}
-            />
-          )}
-        </div>
-      )}
-
-      {/* SendGrid settings panel */}
-      <div style={{ marginTop: 16, padding: 12, border: "1px solid #eee", borderRadius: 12, background: "#f8fafc" }}>
-        <div style={{ fontWeight: 600, marginBottom: 8 }}>SendGrid Settings</div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))", gap: 8 }}>
-          <label style={{ display: "grid", gap: 4 }}>
-            <span>From (verified in SendGrid)</span>
-            <input
-              value={sgFrom}
-              onChange={(e) => setSgFrom(e.target.value)}
-              placeholder="e.g. accounts@yourdomain.com"
-              style={{ padding: 8, borderRadius: 8, border: "1px solid #ddd" }}
-            />
-          </label>
-          <label style={{ display: "grid", gap: 4 }}>
-            <span>Reply-To (who should get the replies)</span>
-            <input
-              value={sgReplyTo}
-              onChange={(e) => setSgReplyTo(e.target.value)}
-              placeholder="e.g. chloe@yourdomain.com"
-              style={{ padding: 8, borderRadius: 8, border: "1px solid #ddd" }}
-            />
-          </label>
-        </div>
-        <div style={{ fontSize: 12, color: "#475569", marginTop: 8 }}>
-          Tip: use a shared “From” (verified) and set Reply-To to the specific staff member’s inbox.
-        </div>
+      <div style={{ marginTop: 16 }}>
+        <input placeholder="From (verified in SendGrid)" value={sgFrom} onChange={e => setSgFrom(e.target.value)} />
+        <input placeholder="Reply-To (optional)" value={sgReplyTo} onChange={e => setSgReplyTo(e.target.value)} />
+        <button disabled={!selected.size || sending} onClick={sendSelectedViaSendGrid}>
+          {sending ? "Sending..." : `Send ${selected.size} via SendGrid`}
+        </button>
       </div>
 
-      {/* Bulk toolbar */}
-      {customerData.emailable.length > 0 && (
-        <div style={{ marginTop: 16, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-          <label>
-            <input
-              type="checkbox"
-              checked={allSelected}
-              onChange={(e) => setSelected(e.target.checked ? new Set(customerData.emailable) : new Set())}
-            />{" "}
-            Select all
-          </label>
-          <button onClick={() => setSelected(new Set(customerData.emailable))}>Select all</button>
-          <button onClick={() => setSelected(new Set())} disabled={!selected.size}>Clear</button>
-          <button
-            onClick={() => openSelectedMailto()}
-            disabled={!selected.size}
-            style={{ background: "#1a73e8", color: "#fff", padding: "6px 12px", borderRadius: 6 }}
-          >
-            Open Mailto ({selected.size})
-          </button>
-          <button
-            onClick={() => downloadSelectedAsZip()}
-            disabled={!selected.size}
-            style={{ background: "#16a34a", color: "#fff", padding: "6px 12px", borderRadius: 6 }}
-          >
-            Download .eml (ZIP)
-          </button>
-          {/* NEW: Send via SendGrid */}
-          <button
-            onClick={() => sendSelectedViaSendGrid()}
-            disabled={!selected.size || sending}
-            style={{ background: "#111827", color: "#fff", padding: "6px 12px", borderRadius: 6 }}
-          >
-            {sending ? "Sending…" : `Send via SendGrid (${selected.size})`}
-          </button>
-        </div>
-      )}
-
-      {/* DASHBOARD */}
-      {customerData.all.length > 0 && (
-        <div style={{ marginTop: 24 }}>
-          <h2>Dashboard</h2>
-
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12 }}>
-            {[
-              ["Total customers", dashboard.totals.customers],
-              ["With email", dashboard.totals.withEmail],
-              ["Selected", dashboard.totals.selected],
-              ["Total overdue (all)", `$${dashboard.totals.totalOverdueAll.toLocaleString()}`],
-              ["Mailto opened", dash.mailOpened],
-              ["EML files created", dash.emlCreated],
-              ["Missing email (skipped)", dash.missingEmail],
-            ].map(([label, value]) => (
-              <div key={label} style={{ border: "1px solid #eee", borderRadius: 12, padding: 12 }}>
-                <div style={{ fontSize: 12, color: "#666" }}>{label}</div>
-                <div style={{ fontWeight: 700, fontSize: 18 }}>{value}</div>
-              </div>
-            ))}
+      {customerData.all.map(cust => {
+        const email = generateEmail(cust);
+        if (!email) return null;
+        return (
+          <div key={cust} style={{ marginTop: 20, border: "1px solid #ccc", padding: 12 }}>
+            <label>
+              <input
+                type="checkbox"
+                checked={selected.has(cust)}
+                onChange={() => {
+                  const next = new Set(selected);
+                  next.has(cust) ? next.delete(cust) : next.add(cust);
+                  setSelected(next);
+                }}
+              />
+              <strong>{cust}</strong> ({email.contact || "no email"})
+            </label>
+            <pre style={{ whiteSpace: "pre-wrap", background: "#fafafa", padding: 8, marginTop: 8 }}>
+              {`Subject: ${email.subject}\n\n${email.body}`}
+            </pre>
+            <details>
+              <summary>Preview HTML</summary>
+              <div dangerouslySetInnerHTML={{ __html: email.html }} />
+            </details>
           </div>
-
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginTop: 16 }}>
-            <div style={{ height: 280, border: "1px solid #eee", borderRadius: 12, padding: 8 }}>
-              <div style={{ fontWeight: 600, margin: "4px 8px" }}>Amount by Aging Bucket</div>
-              <RC.ResponsiveContainer width="100%" height="90%">
-                <RC.PieChart>
-                  <RC.Pie data={dashboard.pie} dataKey="value" nameKey="name" outerRadius={80} label>
-                    {dashboard.pie.map((_, i) => (<RC.Cell key={i} />))}
-                  </RC.Pie>
-                  <RC.Tooltip />
-                  <RC.Legend />
-                </RC.PieChart>
-              </RC.ResponsiveContainer>
-            </div>
-
-            <div style={{ height: 280, border: "1px solid #eee", borderRadius: 12, padding: 8 }}>
-              <div style={{ fontWeight: 600, margin: "4px 8px" }}>Top 10 Customers by Overdue</div>
-              <RC.ResponsiveContainer width="100%" height="90%">
-                <RC.BarChart data={dashboard.top}>
-                  <RC.CartesianGrid strokeDasharray="3 3" />
-                  <RC.XAxis dataKey="name" hide />
-                  <RC.YAxis />
-                  <RC.Tooltip />
-                  <RC.Bar dataKey="total">
-                    {dashboard.top.map((_, i) => (<RC.Cell key={i} />))}
-                  </RC.Bar>
-                </RC.BarChart>
-              </RC.ResponsiveContainer>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Customer list */}
-      {customerData.emailable.length > 0 && (
-        <div style={{ marginTop: 20 }}>
-          <h2>Generated Emails</h2>
-          {customerData.emailable.map((cust) => {
-            const email = generateEmail(cust);
-            if (!email) return null;
-            const { contact, subject, body } = email;
-            return (
-              <div
-                key={cust}
-                style={{ border: "1px solid #e5e5e5", padding: 12, borderRadius: 12, marginTop: 12 }}
-              >
-                <div style={{ display: "flex", justifyContent: "space-between" }}>
-                  <div>
-                    <input
-                      type="checkbox"
-                      checked={selected.has(cust)}
-                      onChange={() => {
-                        const next = new Set(selected);
-                        next.has(cust) ? next.delete(cust) : next.add(cust);
-                        setSelected(next);
-                      }}
-                    />{" "}
-                    <strong>{cust}</strong> {contact && <span>({contact})</span>}
-                  </div>
-                  <div style={{ display: "flex", gap: 8 }}>
-                    {contact && (
-                      <a
-                        href={`mailto:${encodeURIComponent(contact)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`}
-                        style={{
-                          background: "#007bff",
-                          color: "white",
-                          padding: "6px 12px",
-                          borderRadius: 6,
-                          textDecoration: "none",
-                          fontSize: 14,
-                        }}
-                      >
-                        Open Email
-                      </a>
-                    )}
-                    <button
-                      onClick={() => {
-                        const eml = buildEmlFile(contact || "", subject, body);
-                        const blob = new Blob([eml], { type: "message/rfc822" });
-                        const url = URL.createObjectURL(blob);
-                        const a = document.createElement("a");
-                        a.href = url;
-                        a.download = `${cust.replace(/[^a-z0-9]/gi, "_")}.eml`;
-                        a.click();
-                        URL.revokeObjectURL(url);
-                        setDash((d) => ({ ...d, emlCreated: d.emlCreated + 1 }));
-                      }}
-                      style={{
-                        background: "#28a745",
-                        color: "white",
-                        padding: "6px 12px",
-                        borderRadius: 6,
-                        fontSize: 14,
-                        border: "none",
-                      }}
-                    >
-                      Download .eml
-                    </button>
-                    {/* per-customer SendGrid send (optional extra) */}
-                    {contact && (
-                      <button
-                        onClick={() => sendSelectedViaSendGrid([cust])}
-                        disabled={sending}
-                        style={{ background: "#111827", color: "#fff", padding: "6px 12px", borderRadius: 6 }}
-                      >
-                        {sending ? "Sending…" : "Send via SendGrid"}
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                <pre
-                  style={{
-                    whiteSpace: "pre-wrap",
-                    background: "#fafafa",
-                    borderRadius: 8,
-                    padding: 8,
-                    marginTop: 10,
-                  }}
-                >{`Subject: ${subject}\n\n${body}`}</pre>
-              </div>
-            );
-          })}
-        </div>
-      )}
+        );
+      })}
     </div>
   );
 }
