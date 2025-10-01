@@ -168,9 +168,14 @@ function htmlEmailTemplate({
               </div>
               ${creditSection}
               <p>If you've already paid, please ignore this. Otherwise, please reply with your remittance advice.</p>
-              <div style="margin:20px 0;">
-                <a href="${replyHref}" style="background:${BRAND.accent};color:#fff;text-decoration:none;padding:10px 16px;border-radius:8px;font-weight:600;">Reply with remittance</a>
-              </div>
+              <div style="margin:20px 0;">  
+                <a href="${replyHref}" style="background:${BRAND.accent};color:#fff;text-decoration:none;padding:10px 16px;border-radius:8px;font-weight:600;">Reply with remittance</a>  
+                <a href="https://portal.paramountliquor.com.au/payments" 
+     style="background:#16a34a;color:#fff;text-decoration:none;padding:12px 20px;border-radius:8px;font-weight:600;display:inline-block;">
+    Pay Now
+  </a>
+</div>
+    
               <p>Kind regards,<br/>${BRAND.dept}<br/>${BRAND.name}</p>
             </td>
           </tr>
