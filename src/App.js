@@ -92,37 +92,10 @@ Accounts Receivable`,
 
 /* ---------------- CSV helpers ---------------- */
 const PRESETS = {
-  customer: [
-    "customer",
-    "customer name",
-    "account name",
-    "client",
-    "client name",
-    "trading name",
-  ],
+  customer: ["customer", "customer name", "account name", "client", "client name", "trading name"],
   email: ["email", "e-mail", "email address", "contact email"],
-  invoice: [
-    "invoice",
-    "invoice number",
-    "invoice #",
-    "inv#",
-    "doc",
-    "document",
-    "invoice id",
-    "invoiceid",
-    "inv id",
-  ],
-  amount: [
-    "amount",
-    "total",
-    "debit",
-    "balance",
-    "amount due",
-    "outstanding",
-    "total overdue",
-    "overdue total",
-    "total_overdue",
-  ],
+  invoice: ["invoice", "invoice number", "invoice #", "inv#", "doc", "document", "invoice id", "invoiceid", "inv id"],
+  amount: ["amount", "total", "debit", "balance", "amount due", "outstanding", "total overdue", "overdue total", "total_overdue"],
   dueDate: ["duedate", "due date", "due", "terms date"],
 };
 
@@ -195,15 +168,11 @@ export default function App() {
   useEffect(() => {
     document.title = "Overdue Invoice Reminder Generator — by Chloe Hodgson";
   }, []);
-
+  
   const [headers, setHeaders] = useState([]);
   const [rows, setRows] = useState([]);
   const [map, setMap] = useState({
-    customer: "",
-    invoice: "",
-    amount: "",
-    dueDate: "",
-    email: "",
+    customer: "", invoice: "", amount: "", dueDate: "", email: "",
   });
 
   const [tplKey, setTplKey] = useState("Friendly");
@@ -221,90 +190,80 @@ export default function App() {
 
   const [selected, setSelected] = useState(new Set());
 
+  /* ----------- SENDGRID ADDITIONS ----------- */
+  const [sgFrom, setSgFrom] = useState("");
+  const [sgReplyTo, setSgReplyTo] = useState("");
+  const [sending, setSending] = useState(false);
+  /* ------------------------------------------ */
+
   // Memoized customer data
   const customerData = useMemo(() => {
     if (!rows.length) return { all: [], emailable: [], byName: new Map() };
-
+    
     const byName = new Map();
-
+    
     // Build customer data map
     for (const r of rows) {
       const name = (pick(r, map, "customer") ?? "").toString().trim();
       if (!name) continue;
-
+      
       if (!byName.has(name)) {
         byName.set(name, { rows: [], email: null, overdueTotal: 0 });
       }
-
+      
       const data = byName.get(name);
       data.rows.push(r);
-
+      
       const amt = cleanNumber(pick(r, map, "amount"));
       if (amt > 0) data.overdueTotal += amt;
-
+      
       if (!data.email) {
         const email = (pick(r, map, "email") ?? "").toString().trim();
         if (email) data.email = email;
       }
     }
-
+    
     const all = Array.from(byName.keys());
-    const emailable = all.filter((name) => {
+    const emailable = all.filter(name => {
       const data = byName.get(name);
       return data.overdueTotal > 0;
     });
-
+    
     return { all, emailable, byName };
   }, [rows, map]);
 
   // Generate email function
-  const generateEmail = useCallback(
-    (customerName) => {
-      const data = customerData.byName.get(customerName);
-      if (!data) return null;
+  const generateEmail = useCallback((customerName) => {
+    const data = customerData.byName.get(customerName);
+    if (!data) return null;
+    
+    const custRows = data.rows;
+    const overdueRows = custRows.filter(r => cleanNumber(pick(r, map, "amount")) > 0);
+    const creditRows = custRows.filter(r => cleanNumber(pick(r, map, "amount")) < 0);
+    
+    const overdueLines = overdueRows.map((r) => {
+      const inv = pick(r, map, "invoice") ?? "";
+      const due = pick(r, map, "dueDate") ?? "";
+      const amt = cleanNumber(pick(r, map, "amount"));
+      return `- Invoice ${inv} — ${money(amt)} due ${due}`;
+    });
 
-      const custRows = data.rows;
-      const overdueRows = custRows.filter(
-        (r) => cleanNumber(pick(r, map, "amount")) > 0
-      );
-      const creditRows = custRows.filter(
-        (r) => cleanNumber(pick(r, map, "amount")) < 0
-      );
+    const creditLines = creditRows.map((r) => {
+      const ref = pick(r, map, "invoice") ?? "";
+      const date = pick(r, map, "dueDate") ?? "";
+      const amt = cleanNumber(pick(r, map, "amount"));
+      return `- Credit ${ref} — ${money(amt)} dated ${date}`;
+    });
 
-      const overdueLines = overdueRows.map((r) => {
-        const inv = pick(r, map, "invoice") ?? "";
-        const due = pick(r, map, "dueDate") ?? "";
-        const amt = cleanNumber(pick(r, map, "amount"));
-        return `- Invoice ${inv} — ${money(amt)} due ${due}`;
-      });
+    const totalOverdue = overdueRows.reduce((s, r) => s + cleanNumber(pick(r, map, "amount")), 0);
+    const totalCredits = creditRows.reduce((s, r) => s + Math.abs(cleanNumber(pick(r, map, "amount"))), 0);
+    const netPayable = totalOverdue - totalCredits;
 
-      const creditLines = creditRows.map((r) => {
-        const ref = pick(r, map, "invoice") ?? "";
-        const date = pick(r, map, "dueDate") ?? "";
-        const amt = cleanNumber(pick(r, map, "amount"));
-        return `- Credit ${ref} — ${money(amt)} dated ${date}`;
-      });
+    const contact = data.email || "";
+    const subject = `Paramount Liquor Overdue Invoices - ${customerName}`;
 
-      const totalOverdue = overdueRows.reduce(
-        (s, r) => s + cleanNumber(pick(r, map, "amount")),
-        0
-      );
-      const totalCredits = creditRows.reduce(
-        (s, r) => s + Math.abs(cleanNumber(pick(r, map, "amount"))),
-        0
-      );
-      const netPayable = totalOverdue - totalCredits;
-
-      const contact = data.email || "";
-      const subject = `Paramount Liquor Overdue Invoices - ${customerName}`;
-
-      const chosen =
-        tplKey === "Custom"
-          ? customTpl
-          : TEMPLATES[tplKey] || TEMPLATES.Friendly;
-      const creditsSection =
-        creditRows.length > 0
-          ? `
+    const chosen = tplKey === "Custom" ? customTpl : TEMPLATES[tplKey] || TEMPLATES.Friendly;
+    const creditsSection = creditRows.length > 0 ? `
     Unapplied credits (available to offset):
     ${creditLines.join("\n")}
     
@@ -312,87 +271,107 @@ export default function App() {
 
     Net amount now due: ${money(netPayable)}
     
-    `
-          : "";
+    ` : "";
 
-      const body = chosen
-        .replaceAll("{{Customer}}", customerName)
-        .replaceAll("{{InvoiceLines}}", overdueLines.join("\n") || "(none)")
-        .replaceAll("{{TotalOverdue}}", money(totalOverdue))
-        .replaceAll("{{CreditsSection}}", creditsSection);
+    const body = chosen
+      .replaceAll("{{Customer}}", customerName)
+      .replaceAll("{{InvoiceLines}}", overdueLines.join("\n") || "(none)")
+      .replaceAll("{{TotalOverdue}}", money(totalOverdue))
+      .replaceAll("{{CreditsSection}}", creditsSection);
 
-      return { contact, subject, body };
-    },
-    [customerData, map, tplKey, customTpl]
-  );
+    return { contact, subject, body };
+  }, [customerData, map, tplKey, customTpl]);
 
   // Bulk mailto
-  const openSelectedMailto = useCallback(
-    async (customerList) => {
-      const list = customerList || Array.from(selected);
-      if (!list.length) return;
+  const openSelectedMailto = useCallback(async (customerList) => {
+    const list = customerList || Array.from(selected);
+    if (!list.length) return;
+    
+    const delay = (ms) => new Promise((r) => setTimeout(r, ms));
+    let opened = 0, missing = 0;
 
-      const delay = (ms) => new Promise((r) => setTimeout(r, ms));
-      let opened = 0,
-        missing = 0;
-
-      for (const name of list) {
-        const email = generateEmail(name);
-        if (!email || !email.contact) {
-          missing++;
-          continue;
-        }
-        window.open(
-          `mailto:${encodeURIComponent(
-            email.contact
-          )}?subject=${encodeURIComponent(
-            email.subject
-          )}&body=${encodeURIComponent(email.body)}`,
-          "_blank"
-        );
-        opened++;
-        await delay(300);
+    for (const name of list) {
+      const email = generateEmail(name);
+      if (!email || !email.contact) {
+        missing++;
+        continue;
       }
-
-      setDash((d) => ({
-        ...d,
-        mailOpened: d.mailOpened + opened,
-        missingEmail: d.missingEmail + missing,
-      }));
-    },
-    [selected, generateEmail]
-  );
+      window.open(
+        `mailto:${encodeURIComponent(email.contact)}?subject=${encodeURIComponent(email.subject)}&body=${encodeURIComponent(email.body)}`,
+        "_blank"
+      );
+      opened++;
+      await delay(300);
+    }
+    
+    setDash((d) => ({ ...d, mailOpened: d.mailOpened + opened, missingEmail: d.missingEmail + missing }));
+  }, [selected, generateEmail]);
 
   // Bulk ZIP
-  const downloadSelectedAsZip = useCallback(
-    async (customerList) => {
-      const list = customerList || Array.from(selected);
-      if (!list.length) return;
+  const downloadSelectedAsZip = useCallback(async (customerList) => {
+    const list = customerList || Array.from(selected);
+    if (!list.length) return;
+    
+    const zip = new JSZip();
+    for (const name of list) {
+      const email = generateEmail(name);
+      if (!email) continue;
+      const eml = buildEmlFile(email.contact || "", email.subject, email.body);
+      const filename = `${name.replace(/[^a-z0-9]/gi, "_")}.eml`;
+      zip.file(filename, eml, { compression: "STORE" });
+    }
 
-      const zip = new JSZip();
-      for (const name of list) {
-        const email = generateEmail(name);
-        if (!email) continue;
-        const eml = buildEmlFile(
-          email.contact || "",
-          email.subject,
-          email.body
-        );
-        const filename = `${name.replace(/[^a-z0-9]/gi, "_")}.eml`;
-        zip.file(filename, eml, { compression: "STORE" });
+    const blob = await zip.generateAsync({ type: "blob" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "overdue_emails_selected.zip";
+    a.click();
+    URL.revokeObjectURL(url);
+    setDash((d) => ({ ...d, emlCreated: d.emlCreated + list.length }));
+  }, [selected, generateEmail]);
+
+  /* ----------- SENDGRID: bulk send function ----------- */
+  const sendSelectedViaSendGrid = useCallback(async (customerList) => {
+    const list = customerList || Array.from(selected);
+    if (!list.length) return;
+
+    if (!sgFrom) {
+      alert("Enter a 'From' address verified in SendGrid.");
+      return;
+    }
+
+    setSending(true);
+    let ok = 0, fail = 0, skipped = 0;
+
+    for (const name of list) {
+      const email = generateEmail(name);
+      if (!email || !email.contact) { skipped++; continue; }
+
+      try {
+        const res = await fetch("/api/sendgrid-send", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            to: email.contact,
+            subject: email.subject,
+            text: email.body,
+            from: sgFrom,
+            replyTo: sgReplyTo || undefined,
+          }),
+        });
+        if (res.ok) ok++; else fail++;
+        // polite rate limiting
+        await new Promise(r => setTimeout(r, 150));
+      } catch {
+        fail++;
       }
+    }
 
-      const blob = await zip.generateAsync({ type: "blob" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "overdue_emails_selected.zip";
-      a.click();
-      URL.revokeObjectURL(url);
-      setDash((d) => ({ ...d, emlCreated: d.emlCreated + list.length }));
-    },
-    [selected, generateEmail]
-  );
+    setSending(false);
+    alert(`Send complete. Success: ${ok}, Failed: ${fail}, Skipped (no email): ${skipped}`);
+  }, [selected, generateEmail, sgFrom, sgReplyTo]);
+  /* ----------------------------------------------------- */
 
   // CSV upload
   function handleUpload(e) {
@@ -447,21 +426,21 @@ export default function App() {
   // Auto-generate effect - triggers after customerData updates
   useEffect(() => {
     if (!autoGenerate || customerData.emailable.length === 0) return;
-
+    
     // Select all emailable customers
     setSelected(new Set(customerData.emailable));
-
+    
     // Execute auto-action
     const execute = async () => {
-      await new Promise((resolve) => setTimeout(resolve, 200));
-
+      await new Promise(resolve => setTimeout(resolve, 200));
+      
       if (autoAction === "mailto") {
         await openSelectedMailto(customerData.emailable);
       } else {
         await downloadSelectedAsZip(customerData.emailable);
       }
     };
-
+    
     execute();
   }, [customerData.emailable.length]); // Only trigger when data changes
 
@@ -477,12 +456,7 @@ export default function App() {
       const due = pick(r, map, "dueDate") ?? "";
       const d = daysOverdue(due);
 
-      const cur = per.get(name) || {
-        total: 0,
-        count: 0,
-        oldestDue: due,
-        oldestDays: d,
-      };
+      const cur = per.get(name) || { total: 0, count: 0, oldestDue: due, oldestDays: d };
       cur.total += amt || 0;
       cur.count += 1;
 
@@ -519,10 +493,7 @@ export default function App() {
     }));
 
     const top = [...per.entries()]
-      .map(([name, agg]) => ({
-        name,
-        total: Number(Math.max(0, agg.total).toFixed(2)),
-      }))
+      .map(([name, agg]) => ({ name, total: Number(Math.max(0, agg.total).toFixed(2)) }))
       .sort((a, b) => b.total - a.total)
       .slice(0, 10);
 
@@ -538,35 +509,24 @@ export default function App() {
     };
   }, [rows, map, customerData, selected.size]);
 
-  const allSelected =
-    selected.size === customerData.emailable.length &&
-    customerData.emailable.length > 0;
+  const allSelected = selected.size === customerData.emailable.length && customerData.emailable.length > 0;
 
   return (
     <div style={{ padding: 20, fontFamily: "Inter, system-ui, sans-serif" }}>
       <h1>Overdue Invoice Reminder Generator</h1>
 
       {/* AUTO-GENERATION CONTROLS */}
-      <div
-        style={{
-          background: "#f0f9ff",
-          border: "2px solid #0284c7",
-          borderRadius: 12,
-          padding: 16,
-          marginBottom: 16,
-        }}
-      >
+      <div style={{
+        background: "#f0f9ff",
+        border: "2px solid #0284c7",
+        borderRadius: 12,
+        padding: 16,
+        marginBottom: 16
+      }}>
         <div style={{ fontWeight: 600, marginBottom: 12, fontSize: 16 }}>
           🤖 Auto-Generation Settings
         </div>
-        <div
-          style={{
-            display: "flex",
-            gap: 16,
-            alignItems: "center",
-            flexWrap: "wrap",
-          }}
-        >
+        <div style={{ display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap" }}>
           <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <input
               type="checkbox"
@@ -575,7 +535,7 @@ export default function App() {
             />
             <span>Enable auto-generation on CSV upload</span>
           </label>
-
+          
           {autoGenerate && (
             <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <span>Auto-action:</span>
@@ -586,7 +546,7 @@ export default function App() {
                   padding: 6,
                   borderRadius: 6,
                   border: "1px solid #0284c7",
-                  background: "white",
+                  background: "white"
                 }}
               >
                 <option value="zip">Download ZIP (all emails)</option>
@@ -596,14 +556,12 @@ export default function App() {
           )}
         </div>
         {autoGenerate && (
-          <div
-            style={{
-              marginTop: 8,
-              fontSize: 13,
-              color: "#0369a1",
-              fontStyle: "italic",
-            }}
-          >
+          <div style={{ 
+            marginTop: 8, 
+            fontSize: 13, 
+            color: "#0369a1",
+            fontStyle: "italic" 
+          }}>
             ✨ Emails will be auto-generated immediately after uploading CSV
           </div>
         )}
@@ -613,24 +571,9 @@ export default function App() {
 
       {/* Mapping panel */}
       {headers.length > 0 && (
-        <div
-          style={{
-            marginTop: 16,
-            border: "1px solid #eee",
-            borderRadius: 12,
-            padding: 12,
-          }}
-        >
-          <div style={{ fontWeight: 600, marginBottom: 8 }}>
-            Map your CSV columns
-          </div>
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-              gap: 12,
-            }}
-          >
+        <div style={{ marginTop: 16, border: "1px solid #eee", borderRadius: 12, padding: 12 }}>
+          <div style={{ fontWeight: 600, marginBottom: 8 }}>Map your CSV columns</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 }}>
             {[
               ["customer", "Customer (required)"],
               ["email", "Email (optional)"],
@@ -638,27 +581,16 @@ export default function App() {
               ["amount", "Amount (required)"],
               ["dueDate", "Due Date (required)"],
             ].map(([key, label]) => (
-              <label
-                key={key}
-                style={{ display: "grid", gap: 6, fontSize: 12 }}
-              >
+              <label key={key} style={{ display: "grid", gap: 6, fontSize: 12 }}>
                 <span>{label}</span>
                 <select
                   value={map[key]}
-                  onChange={(e) =>
-                    setMap((m) => ({ ...m, [key]: e.target.value }))
-                  }
-                  style={{
-                    padding: 8,
-                    borderRadius: 8,
-                    border: "1px solid #ddd",
-                  }}
+                  onChange={(e) => setMap((m) => ({ ...m, [key]: e.target.value }))}
+                  style={{ padding: 8, borderRadius: 8, border: "1px solid #ddd" }}
                 >
                   <option value="">— choose a header —</option>
                   {headers.map((h) => (
-                    <option key={h} value={h}>
-                      {h}
-                    </option>
+                    <option key={h} value={h}>{h}</option>
                   ))}
                 </select>
               </label>
@@ -668,14 +600,9 @@ export default function App() {
           <div style={{ marginTop: 12 }}>
             <label>
               Template:&nbsp;
-              <select
-                value={tplKey}
-                onChange={(e) => setTplKey(e.target.value)}
-              >
+              <select value={tplKey} onChange={(e) => setTplKey(e.target.value)}>
                 {Object.keys(TEMPLATES).map((k) => (
-                  <option key={k} value={k}>
-                    {k}
-                  </option>
+                  <option key={k} value={k}>{k}</option>
                 ))}
                 <option value="Custom">Custom…</option>
               </select>
@@ -701,61 +628,68 @@ export default function App() {
         </div>
       )}
 
+      {/* SendGrid settings panel */}
+      <div style={{ marginTop: 16, padding: 12, border: "1px solid #eee", borderRadius: 12, background: "#f8fafc" }}>
+        <div style={{ fontWeight: 600, marginBottom: 8 }}>SendGrid Settings</div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))", gap: 8 }}>
+          <label style={{ display: "grid", gap: 4 }}>
+            <span>From (verified in SendGrid)</span>
+            <input
+              value={sgFrom}
+              onChange={(e) => setSgFrom(e.target.value)}
+              placeholder="e.g. accounts@yourdomain.com"
+              style={{ padding: 8, borderRadius: 8, border: "1px solid #ddd" }}
+            />
+          </label>
+          <label style={{ display: "grid", gap: 4 }}>
+            <span>Reply-To (who should get the replies)</span>
+            <input
+              value={sgReplyTo}
+              onChange={(e) => setSgReplyTo(e.target.value)}
+              placeholder="e.g. chloe@yourdomain.com"
+              style={{ padding: 8, borderRadius: 8, border: "1px solid #ddd" }}
+            />
+          </label>
+        </div>
+        <div style={{ fontSize: 12, color: "#475569", marginTop: 8 }}>
+          Tip: use a shared “From” (verified) and set Reply-To to the specific staff member’s inbox.
+        </div>
+      </div>
+
       {/* Bulk toolbar */}
       {customerData.emailable.length > 0 && (
-        <div
-          style={{
-            marginTop: 16,
-            display: "flex",
-            gap: 8,
-            flexWrap: "wrap",
-            alignItems: "center",
-          }}
-        >
+        <div style={{ marginTop: 16, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
           <label>
             <input
               type="checkbox"
               checked={allSelected}
-              onChange={(e) =>
-                setSelected(
-                  e.target.checked ? new Set(customerData.emailable) : new Set()
-                )
-              }
+              onChange={(e) => setSelected(e.target.checked ? new Set(customerData.emailable) : new Set())}
             />{" "}
             Select all
           </label>
-          <button onClick={() => setSelected(new Set(customerData.emailable))}>
-            Select all
-          </button>
-          <button
-            onClick={() => setSelected(new Set())}
-            disabled={!selected.size}
-          >
-            Clear
-          </button>
+          <button onClick={() => setSelected(new Set(customerData.emailable))}>Select all</button>
+          <button onClick={() => setSelected(new Set())} disabled={!selected.size}>Clear</button>
           <button
             onClick={() => openSelectedMailto()}
             disabled={!selected.size}
-            style={{
-              background: "#1a73e8",
-              color: "#fff",
-              padding: "6px 12px",
-              borderRadius: 6,
-            }}
+            style={{ background: "#1a73e8", color: "#fff", padding: "6px 12px", borderRadius: 6 }}
           >
             Open Mailto ({selected.size})
           </button>
           <button
             onClick={() => downloadSelectedAsZip()}
             disabled={!selected.size}
-            style={{
-              background: "#16a34a",
-              color: "#fff",
-              padding: "6px 12px",
-              borderRadius: 6,
-            }}
+            style={{ background: "#16a34a", color: "#fff", padding: "6px 12px", borderRadius: 6 }}
           >
             Download .eml (ZIP)
+          </button>
+          {/* NEW: Send via SendGrid */}
+          <button
+            onClick={() => sendSelectedViaSendGrid()}
+            disabled={!selected.size || sending}
+            style={{ background: "#111827", color: "#fff", padding: "6px 12px", borderRadius: 6 }}
+          >
+            {sending ? "Sending…" : `Send via SendGrid (${selected.size})`}
           </button>
         </div>
       )}
@@ -765,70 +699,30 @@ export default function App() {
         <div style={{ marginTop: 24 }}>
           <h2>Dashboard</h2>
 
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-              gap: 12,
-            }}
-          >
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12 }}>
             {[
               ["Total customers", dashboard.totals.customers],
               ["With email", dashboard.totals.withEmail],
               ["Selected", dashboard.totals.selected],
-              [
-                "Total overdue (all)",
-                `$${dashboard.totals.totalOverdueAll.toLocaleString()}`,
-              ],
+              ["Total overdue (all)", `$${dashboard.totals.totalOverdueAll.toLocaleString()}`],
               ["Mailto opened", dash.mailOpened],
               ["EML files created", dash.emlCreated],
               ["Missing email (skipped)", dash.missingEmail],
             ].map(([label, value]) => (
-              <div
-                key={label}
-                style={{
-                  border: "1px solid #eee",
-                  borderRadius: 12,
-                  padding: 12,
-                }}
-              >
+              <div key={label} style={{ border: "1px solid #eee", borderRadius: 12, padding: 12 }}>
                 <div style={{ fontSize: 12, color: "#666" }}>{label}</div>
                 <div style={{ fontWeight: 700, fontSize: 18 }}>{value}</div>
               </div>
             ))}
           </div>
 
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "1fr 1fr",
-              gap: 16,
-              marginTop: 16,
-            }}
-          >
-            <div
-              style={{
-                height: 280,
-                border: "1px solid #eee",
-                borderRadius: 12,
-                padding: 8,
-              }}
-            >
-              <div style={{ fontWeight: 600, margin: "4px 8px" }}>
-                Amount by Aging Bucket
-              </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginTop: 16 }}>
+            <div style={{ height: 280, border: "1px solid #eee", borderRadius: 12, padding: 8 }}>
+              <div style={{ fontWeight: 600, margin: "4px 8px" }}>Amount by Aging Bucket</div>
               <RC.ResponsiveContainer width="100%" height="90%">
                 <RC.PieChart>
-                  <RC.Pie
-                    data={dashboard.pie}
-                    dataKey="value"
-                    nameKey="name"
-                    outerRadius={80}
-                    label
-                  >
-                    {dashboard.pie.map((_, i) => (
-                      <RC.Cell key={i} />
-                    ))}
+                  <RC.Pie data={dashboard.pie} dataKey="value" nameKey="name" outerRadius={80} label>
+                    {dashboard.pie.map((_, i) => (<RC.Cell key={i} />))}
                   </RC.Pie>
                   <RC.Tooltip />
                   <RC.Legend />
@@ -836,17 +730,8 @@ export default function App() {
               </RC.ResponsiveContainer>
             </div>
 
-            <div
-              style={{
-                height: 280,
-                border: "1px solid #eee",
-                borderRadius: 12,
-                padding: 8,
-              }}
-            >
-              <div style={{ fontWeight: 600, margin: "4px 8px" }}>
-                Top 10 Customers by Overdue
-              </div>
+            <div style={{ height: 280, border: "1px solid #eee", borderRadius: 12, padding: 8 }}>
+              <div style={{ fontWeight: 600, margin: "4px 8px" }}>Top 10 Customers by Overdue</div>
               <RC.ResponsiveContainer width="100%" height="90%">
                 <RC.BarChart data={dashboard.top}>
                   <RC.CartesianGrid strokeDasharray="3 3" />
@@ -854,9 +739,7 @@ export default function App() {
                   <RC.YAxis />
                   <RC.Tooltip />
                   <RC.Bar dataKey="total">
-                    {dashboard.top.map((_, i) => (
-                      <RC.Cell key={i} />
-                    ))}
+                    {dashboard.top.map((_, i) => (<RC.Cell key={i} />))}
                   </RC.Bar>
                 </RC.BarChart>
               </RC.ResponsiveContainer>
@@ -876,16 +759,9 @@ export default function App() {
             return (
               <div
                 key={cust}
-                style={{
-                  border: "1px solid #e5e5e5",
-                  padding: 12,
-                  borderRadius: 12,
-                  marginTop: 12,
-                }}
+                style={{ border: "1px solid #e5e5e5", padding: 12, borderRadius: 12, marginTop: 12 }}
               >
-                <div
-                  style={{ display: "flex", justifyContent: "space-between" }}
-                >
+                <div style={{ display: "flex", justifyContent: "space-between" }}>
                   <div>
                     <input
                       type="checkbox"
@@ -896,17 +772,12 @@ export default function App() {
                         setSelected(next);
                       }}
                     />{" "}
-                    <strong>{cust}</strong>{" "}
-                    {contact && <span>({contact})</span>}
+                    <strong>{cust}</strong> {contact && <span>({contact})</span>}
                   </div>
                   <div style={{ display: "flex", gap: 8 }}>
                     {contact && (
                       <a
-                        href={`mailto:${encodeURIComponent(
-                          contact
-                        )}?subject=${encodeURIComponent(
-                          subject
-                        )}&body=${encodeURIComponent(body)}`}
+                        href={`mailto:${encodeURIComponent(contact)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`}
                         style={{
                           background: "#007bff",
                           color: "white",
@@ -922,19 +793,14 @@ export default function App() {
                     <button
                       onClick={() => {
                         const eml = buildEmlFile(contact || "", subject, body);
-                        const blob = new Blob([eml], {
-                          type: "message/rfc822",
-                        });
+                        const blob = new Blob([eml], { type: "message/rfc822" });
                         const url = URL.createObjectURL(blob);
                         const a = document.createElement("a");
                         a.href = url;
                         a.download = `${cust.replace(/[^a-z0-9]/gi, "_")}.eml`;
                         a.click();
                         URL.revokeObjectURL(url);
-                        setDash((d) => ({
-                          ...d,
-                          emlCreated: d.emlCreated + 1,
-                        }));
+                        setDash((d) => ({ ...d, emlCreated: d.emlCreated + 1 }));
                       }}
                       style={{
                         background: "#28a745",
@@ -947,6 +813,16 @@ export default function App() {
                     >
                       Download .eml
                     </button>
+                    {/* per-customer SendGrid send (optional extra) */}
+                    {contact && (
+                      <button
+                        onClick={() => sendSelectedViaSendGrid([cust])}
+                        disabled={sending}
+                        style={{ background: "#111827", color: "#fff", padding: "6px 12px", borderRadius: 6 }}
+                      >
+                        {sending ? "Sending…" : "Send via SendGrid"}
+                      </button>
+                    )}
                   </div>
                 </div>
 
