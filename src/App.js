@@ -395,6 +395,23 @@ export default function App() {
         fail++;
       }
     }
+const personalizedHtml = email.html.replace(
+  'href="#"',
+  `href="mailto:${encodeURIComponent(sgReplyTo || "")}?subject=${encodeURIComponent(email.subject)}"`
+);
+
+await fetch("/api/sendgrid-send", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    to: email.contact,
+    subject: email.subject,
+    text: email.body,          // plain text alternative
+    html: personalizedHtml,    // branded HTML
+    from: sgFrom,
+    replyTo: sgReplyTo || undefined,
+  }),
+});
 
     setSending(false);
     alert(`Send complete. Success: ${ok}, Failed: ${fail}, Skipped (no email): ${skipped}`);
