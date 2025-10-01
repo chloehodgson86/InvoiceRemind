@@ -248,53 +248,67 @@ export default function App() {
 
   // Generate email function
   const generateEmail = useCallback((customerName) => {
-    const data = customerData.byName.get(customerName);
-    if (!data) return null;
-    
-    const custRows = data.rows;
-    const overdueRows = custRows.filter(r => cleanNumber(pick(r, map, "amount")) > 0);
-    const creditRows = custRows.filter(r => cleanNumber(pick(r, map, "amount")) < 0);
-    
-    const overdueLines = overdueRows.map((r) => {
-      const inv = pick(r, map, "invoice") ?? "";
-      const due = pick(r, map, "dueDate") ?? "";
-      const amt = cleanNumber(pick(r, map, "amount"));
-      return `- Invoice ${inv} — ${money(amt)} due ${due}`;
-    });
+  const data = customerData.byName.get(customerName);
+  if (!data) return null;
 
-    const creditLines = creditRows.map((r) => {
-      const ref = pick(r, map, "invoice") ?? "";
-      const date = pick(r, map, "dueDate") ?? "";
-      const amt = cleanNumber(pick(r, map, "amount"));
-      return `- Credit ${ref} — ${money(amt)} dated ${date}`;
-    });
+  const custRows = data.rows;
+  const overdueRows = custRows
+    .filter(r => cleanNumber(pick(r, map, "amount")) > 0)
+    .map(r => ({
+      inv:  pick(r, map, "invoice") ?? "",
+      due:  pick(r, map, "dueDate") ?? "",
+      amt:  cleanNumber(pick(r, map, "amount")),
+    }));
 
-    const totalOverdue = overdueRows.reduce((s, r) => s + cleanNumber(pick(r, map, "amount")), 0);
-    const totalCredits = creditRows.reduce((s, r) => s + Math.abs(cleanNumber(pick(r, map, "amount"))), 0);
-    const netPayable = totalOverdue - totalCredits;
+  const creditRows = custRows
+    .filter(r => cleanNumber(pick(r, map, "amount")) < 0)
+    .map(r => ({
+      ref:  pick(r, map, "invoice") ?? "",
+      date: pick(r, map, "dueDate") ?? "",
+      amt:  cleanNumber(pick(r, map, "amount")),
+    }));
 
-    const contact = data.email || "";
-    const subject = `Paramount Liquor Overdue Invoices - ${customerName}`;
+  const overdueLinesText = overdueRows.map(r => `- Invoice ${r.inv} — ${money(r.amt)} due ${r.due}`).join("\n");
+  const creditLinesText  = creditRows.map(r => `- Credit ${r.ref} — ${money(r.amt)} dated ${r.date}`).join("\n");
 
-    const chosen = tplKey === "Custom" ? customTpl : TEMPLATES[tplKey] || TEMPLATES.Friendly;
-    const creditsSection = creditRows.length > 0 ? `
-    Unapplied credits (available to offset):
-    ${creditLines.join("\n")}
-    
-    Total credits: ${money(totalCredits)}
+  const totalOverdue = overdueRows.reduce((s, r) => s + r.amt, 0);
+  const totalCredits = creditRows.reduce((s, r) => s + Math.abs(r.amt), 0);
+  const netPayable   = totalOverdue - totalCredits;
 
-    Net amount now due: ${money(netPayable)}
-    
-    ` : "";
+  const contact = data.email || "";
+  const subject = `Paramount Liquor Overdue Invoices - ${customerName}`;
 
-    const body = chosen
-      .replaceAll("{{Customer}}", customerName)
-      .replaceAll("{{InvoiceLines}}", overdueLines.join("\n") || "(none)")
-      .replaceAll("{{TotalOverdue}}", money(totalOverdue))
-      .replaceAll("{{CreditsSection}}", creditsSection);
+  const chosen = tplKey === "Custom" ? customTpl : TEMPLATES[tplKey] || TEMPLATES.Friendly;
+  const creditsSection = creditRows.length ? `
+  Unapplied credits (available to offset):
+  ${creditLinesText}
 
-    return { contact, subject, body };
-  }, [customerData, map, tplKey, customTpl]);
+  Total credits: ${money(totalCredits)}
+
+  Net amount now due: ${money(netPayable)}
+
+  ` : "";
+
+  const textBody = chosen
+    .replaceAll("{{Customer}}", customerName)
+    .replaceAll("{{InvoiceLines}}", overdueLinesText || "(none)")
+    .replaceAll("{{TotalOverdue}}", money(totalOverdue))
+    .replaceAll("{{CreditsSection}}", creditsSection);
+
+  const htmlBody = htmlEmailTemplate({
+    customerName,
+    subject,
+    overdueRows,
+    creditRows,
+    totalOverdue,
+    totalCredits,
+    netPayable,
+    replyTo: null,                    // injected when sending
+    templateLabel: tplKey === "Custom" ? "Custom" : tplKey,
+  });
+
+  return { contact, subject, body: textBody, html: htmlBody };
+}, [customerData, map, tplKey, customTpl]);
 
   // Bulk mailto
   const openSelectedMailto = useCallback(async (customerList) => {
