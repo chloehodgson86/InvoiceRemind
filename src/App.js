@@ -3,6 +3,20 @@ import React, { useMemo, useState, useEffect, useCallback } from "react";
 import Papa from "papaparse";
 import JSZip from "jszip";
 import * as RC from "recharts";
+// Branding (edit to your taste)
+const BRAND = {
+  name: "Paramount Liquor",
+  dept: "Accounts Receivable",
+  primary: "#0f172a",   // header background
+  accent:  "#0ea5e9",   // button color
+  border:  "#e5e7eb",
+  subtle:  "#f8fafc",
+  text:    "#0f172a",
+  muted:   "#475569",
+  footer:  "#64748b",
+  // Put your logo file in /public/logo.png OR use a hosted URL
+  logoUrl: "/logo.png", // e.g. /public/logo.png in Vercel/CodeSandbox
+};
 
 /* ---------------- Date helpers for aging ---------------- */
 function toDate(v) {
