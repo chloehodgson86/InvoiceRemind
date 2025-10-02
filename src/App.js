@@ -277,51 +277,50 @@ export default function App() {
         </button>
       </div>
 
-      {customerData.all.map(cust => {
-        const data = customerData.byName.get(cust);
-        if (!data) return null;
+  {customerData.all.map(cust => {
+  const data = customerData.byName.get(cust);
+  if (!data) return null;
 
-        // Build same structures used for sending, for preview purposes
-        const custRows = data.rows;
-        const overdueRows = custRows.filter(r => cleanNumber(r[map.amount]) > 0)
-          .map(r => ({ inv: r[map.invoice], due: r[map.dueDate], amt: cleanNumber(r[map.amount]) }));
-        const creditRows = custRows.filter(r => cleanNumber(r[map.amount]) < 0)
-          .map(r => ({ ref: r[map.invoice], date: r[map.dueDate], amt: cleanNumber(r[map.amount]) }));
-        const totalOverdue = overdueRows.reduce((s, r) => s + r.amt, 0);
-        const totalCredits = creditRows.reduce((s, r) => s + Math.abs(r.amt), 0);
-        const netPayable = totalOverdue - totalCredits;
+  const custRows = data.rows;
+  const overdueRows = custRows.filter(r => cleanNumber(r[map.amount]) > 0)
+    .map(r => ({ inv: r[map.invoice], due: r[map.dueDate], amt: cleanNumber(r[map.amount]) }));
+  const creditRows = custRows.filter(r => cleanNumber(r[map.amount]) < 0)
+    .map(r => ({ ref: r[map.invoice], date: r[map.dueDate], amt: cleanNumber(r[map.amount]) }));
 
-        const previewHtml = buildPreviewHtml({
-          customerName: cust,
-          overdueRows,
-          creditRows,
-          totalOverdue,
-          totalCredits,
-          netPayable
-        });
+  const totalOverdue = overdueRows.reduce((s, r) => s + r.amt, 0);
+  const totalCredits = creditRows.reduce((s, r) => s + Math.abs(r.amt), 0);
+  const netPayable = totalOverdue - totalCredits;
 
-        return (
-          <div key={cust} style={{ marginTop: 20, border: "1px solid #ccc", padding: 12 }}>
-            <label>
-              <input
-                type="checkbox"
-                checked={selected.has(cust)}
-                onChange={() => {
-                  const next = new Set(selected);
-                  next.has(cust) ? next.delete(cust) : next.add(cust);
-                  setSelected(next);
-                }}
-              />
-              <strong>{cust}</strong> ({data.email || "no email"})
-            </label>
+  // 🔴 skip if nothing owing
+  if (overdueRows.length === 0 || netPayable <= 0) return null;
 
-            <details style={{ marginTop: 8 }}>
-              <summary>Preview</summary>
-              <div dangerouslySetInnerHTML={{ __html: previewHtml }} />
-            </details>
-          </div>
-        );
-      })}
+  const previewHtml = buildPreviewHtml({
+    customerName: cust,
+    overdueRows,
+    creditRows,
+    totalOverdue,
+    totalCredits,
+    netPayable
+  });
+
+  return (
+    <div key={cust} style={{ marginTop: 20, border: "1px solid #ccc", padding: 12 }}>
+      <label>
+        <input
+          type="checkbox"
+          checked={selected.has(cust)}
+          onChange={() => {
+            const next = new Set(selected);
+            next.has(cust) ? next.delete(cust) : next.add(cust);
+            setSelected(next);
+          }}
+        />
+        <strong>{cust}</strong> ({data.email || "no email"})
+      </label>
+      <details style={{ marginTop: 8 }}>
+        <summary>Preview</summary>
+        <div dangerouslySetInnerHTML={{ __html: previewHtml }} />
+      </details>
     </div>
   );
-}
+})}
