@@ -100,23 +100,25 @@ export default async function handler(req, res) {
       ...(inlineLogoAttachment ? { attachments: [inlineLogoAttachment] } : {}),
     };
 
-    const payload = {
-      ...base,
-      personalizations: [{
-        to: [{ email: to }],
-        dynamic_template_data: {
-          customerName,
-          invoiceRows,
-          totalOverdue,
-          totalCredits,
-          netPayable,
-          creditSection,
-          replyHref,
-          year: new Date().getFullYear(),
-        },
-      }],
-      template_id: templateId,
-    };
+const payload = {
+  ...base,
+  personalizations: [{
+    to: [{ email: to }],
+    dynamic_template_data: {
+      customerName,
+      invoiceRows,
+      totalOverdue,
+      totalCredits,
+      netPayable,
+      creditSection,
+      replyHref,
+      year: new Date().getFullYear(),
+      logoSrc: "cid:logo",   // <-- add this
+    },
+  }],
+  template_id: templateId,
+};
+
 
     /* ---------------- Send to SendGrid ---------------- */
     const resp = await fetch("https://api.sendgrid.com/v3/mail/send", {
