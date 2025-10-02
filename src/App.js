@@ -234,30 +234,35 @@ export default function App() {
 
       if (overdueRows.length === 0 || netPayable <= 0) { skipped++; continue; }
 
-      const subject = `Paramount Liquor Overdue Invoices - ${name}`;
+try {
+  const subject = `Paramount Liquor - Overdue Invoices - ${name}`;
 
-      try {
-        const res = await fetch("/api/sendgrid-send", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            to: data.email,
-            from: sgFrom,
-            replyTo: sgReplyTo || undefined,
-            templateId: "d-c32e5033436a4186a760c43071a0a103",
-            customerName: name,
-            overdueRows,
-            creditRows,
-            totalOverdue: money(totalOverdue),
-            totalCredits: money(totalCredits),
-            netPayable: money(netPayable),
-            subject,
-          }),
-        });
-        if (res.ok) ok++; else fail++;
-      } catch {
-        fail++;
-      }
+  const res = await fetch("/api/sendgrid-send", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      to: data.email,
+      from: sgFrom,
+      replyTo: sgReplyTo || undefined,
+      templateId: "d-c32e5033436a4186a760c43071a0a103", // ✅ your template ID
+      dynamicData: {
+        customerName: name,
+        overdueRows,
+        creditRows,
+        totalOverdue: money(totalOverdue),
+        totalCredits: money(totalCredits),
+        netPayable: money(netPayable),
+        subject, // 🔑 inject subject here
+      },
+      subject, // 🔑 ensure subject also comes through at top-level
+    }),
+  });
+
+  if (res.ok) ok++; else fail++;
+} catch {
+  fail++;
+}
+
       await new Promise(r => setTimeout(r, 150));
     }
     setSending(false);
