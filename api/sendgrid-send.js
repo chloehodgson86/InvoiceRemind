@@ -1,55 +1,93 @@
 // /api/sendgrid-send.js
+import fs from "fs";
+import path from "path";
+
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
   try {
-    // Works on Vercel (req.body) and web-standards (req.json)
-    const body = (typeof req.body === "object" && req.body) || (await req.json?.()) || {};
-    const { to, subject, text, html, from, replyTo } = body;
+    const body =
+      (typeof req.body === "object" && req.body) ||
+      (await req.json?.()) ||
+      {};
 
-    if (!to || !subject || (!text && !html)) {
-      return res.status(400).json({ error: "Missing to/subject and either text or html" });
+    const { to, from, replyTo, subject, text, html, templateId, dynamicData = {} } = body;
+
+    if (!to || !from) {
+      return res.status(400).json({ error: "Missing 'to' or 'from'." });
     }
 
     const apiKey = process.env.SENDGRID_API_KEY;
-    if (!apiKey) return res.status(500).json({ error: "SENDGRID_API_KEY not set" });
+    if (!apiKey) {
+      return res.status(500).json({ error: "SENDGRID_API_KEY not set" });
+    }
 
-    const fromEmail = from || process.env.SENDGRID_FROM || "no-reply@example.com";
+    // ---- Read logo and attach inline ----
+    let inlineLogoAttachment = null;
+    try {
+      const logoPath = path.join(process.cwd(), "public", "logo.png");
+      const logoBase64 = fs.readFileSync(logoPath).toString("base64");
+      inlineLogoAttachment = {
+        content: logoBase64,
+        filename: "logo.png",
+        type: "image/png",
+        disposition: "inline",
+        content_id: "logo", // <-- reference in HTML with src="cid:logo"
+      };
+    } catch (err) {
+      console.error("Logo not found in /public/logo.png", err);
+    }
 
-    // Build multipart/alternative (text + html)
-    const content = [];
-    if (text) content.push({ type: "text/plain", value: text });
-    if (html) content.push({ type: "text/html", value: html });
-
-    const payload = {
-      personalizations: [{ to: [{ email: to }] }],
-      from: { email: fromEmail, name: "Paramount Liquor Accounts" },
-      subject,
-      content,
-      ...(replyTo ? { reply_to: { email: replyTo } } : {}),
+    const headers = {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
     };
 
-    const sgRes = await fetch("https://api.sendgrid.com/v3/mail/send", {
+    let payload;
+    if (templateId) {
+      payload = {
+        from: { email: from },
+        personalizations: [
+          { to: [{ email: to }], dynamic_template_data: dynamicData },
+        ],
+        template_id: templateId,
+        ...(replyTo ? { reply_to: { email: replyTo } } : {}),
+        ...(inlineLogoAttachment ? { attachments: [inlineLogoAttachment] } : {}),
+      };
+    } else {
+      const content = [];
+      if (text) content.push({ type: "text/plain", value: text });
+      if (html) content.push({ type: "text/html", value: html });
+
+      payload = {
+        from: { email: from },
+        personalizations: [
+          { to: [{ email: to }], ...(subject ? { subject } : {}) },
+        ],
+        ...(replyTo ? { reply_to: { email: replyTo } } : {}),
+        ...(content.length ? { content } : {}),
+        ...(inlineLogoAttachment ? { attachments: [inlineLogoAttachment] } : {}),
+      };
+    }
+
+    const resp = await fetch("https://api.sendgrid.com/v3/mail/send", {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
+      headers,
       body: JSON.stringify(payload),
     });
 
-    const messageId = sgRes.headers.get?.("x-message-id") || null;
-
-    if (!sgRes.ok) {
-      const errText = await sgRes.text().catch(() => "");
-      return res.status(sgRes.status).json({ ok: false, messageId, error: errText || "SendGrid error" });
+    if (!resp.ok) {
+      const errTxt = await resp.text();
+      return res.status(resp.status).json({ error: errTxt });
     }
 
-    return res.status(200).json({ ok: true, messageId, sentHtml: !!html });
+    return res.status(200).json({
+      ok: true,
+      inlineLogoAttached: Boolean(inlineLogoAttachment),
+    });
   } catch (e) {
-    return res.status(500).json({ error: e?.message || "Unexpected error" });
+    return res.status(500).json({ error: e?.message || "Unknown error" });
   }
 }
-
