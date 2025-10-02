@@ -140,62 +140,62 @@ export default function App() {
   }, [rows, map]);
 
   // Send via SendGrid Dynamic Template
-  const sendSelectedViaSendGrid = useCallback(async () => {
-    const list = Array.from(selected);
-    if (!list.length) return;
-    if (!sgFrom) {
-      alert("Enter a From address verified in SendGrid.");
-      return;
+  // Send via SendGrid
+const sendSelectedViaSendGrid = useCallback(async () => {
+  const list = Array.from(selected);
+  if (!list.length) return;
+  if (!sgFrom) {
+    alert("Enter a From address verified in SendGrid.");
+    return;
+  }
+  setSending(true);
+  let ok = 0, fail = 0, skipped = 0;
+
+  for (const name of list) {
+    const data = customerData.byName.get(name);
+    if (!data) { skipped++; continue; }
+
+    const custRows = data.rows;
+    const overdueRows = custRows.filter(r => cleanNumber(r[map.amount]) > 0)
+      .map(r => ({ inv: r[map.invoice], due: r[map.dueDate], amt: cleanNumber(r[map.amount]) }));
+    const creditRows = custRows.filter(r => cleanNumber(r[map.amount]) < 0)
+      .map(r => ({ ref: r[map.invoice], date: r[map.dueDate], amt: cleanNumber(r[map.amount]) }));
+
+    const totalOverdue = overdueRows.reduce((s, r) => s + r.amt, 0);
+    const totalCredits = creditRows.reduce((s, r) => s + Math.abs(r.amt), 0);
+    const netPayable = totalOverdue - totalCredits;
+
+    if (overdueRows.length === 0 || netPayable <= 0) { skipped++; continue; }
+
+    const subject = `Paramount Liquor Overdue Invoices - ${name}`;
+
+    try {
+      const res = await fetch("/api/sendgrid-send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          to: data.email,
+          from: sgFrom,
+          replyTo: sgReplyTo || undefined,
+          templateId: "d-c32e5033436a4186a760c43071a0a103", // ✅ your template ID
+          customerName: name,
+          overdueRows,
+          creditRows,
+          totalOverdue: money(totalOverdue),
+          totalCredits: money(totalCredits),
+          netPayable: money(netPayable),
+          subject,
+        }),
+      });
+      if (res.ok) ok++; else fail++;
+    } catch {
+      fail++;
     }
-    setSending(true);
-    let ok = 0, fail = 0, skipped = 0;
-
-    for (const name of list) {
-      const data = customerData.byName.get(name);
-      if (!data || !data.email) { skipped++; continue; }
-
-      // Build invoice + credit rows
-      const custRows = data.rows;
-      const overdueRows = custRows.filter(r => cleanNumber(r[map.amount]) > 0)
-        .map(r => ({ inv: r[map.invoice], due: r[map.dueDate], amt: cleanNumber(r[map.amount]) }));
-      const creditRows = custRows.filter(r => cleanNumber(r[map.amount]) < 0)
-        .map(r => ({ ref: r[map.invoice], date: r[map.dueDate], amt: cleanNumber(r[map.amount]) }));
-
-      const totalOverdue = overdueRows.reduce((s, r) => s + r.amt, 0);
-      const totalCredits = creditRows.reduce((s, r) => s + Math.abs(r.amt), 0);
-      const netPayable = totalOverdue - totalCredits;
-
-      if (overdueRows.length === 0 || netPayable <= 0) { skipped++; continue; }
-
-      const subject = `Paramount Liquor Overdue Invoices - ${name}`;
-
-      try {
-        const res = await fetch("/api/sendgrid-send", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            to: data.email,
-            from: sgFrom,
-            replyTo: sgReplyTo || undefined,
-            templateId: "d-c32e5033436a4186a760c43071a0a103", // your template ID
-            customerName: name,
-            overdueRows,
-            creditRows,
-            totalOverdue,
-            totalCredits,
-            netPayable,
-            subject,
-          }),
-        });
-        if (res.ok) ok++; else fail++;
-      } catch {
-        fail++;
-      }
-      await new Promise(r => setTimeout(r, 150));
-    }
-    setSending(false);
-    alert(`Done. Success: ${ok}, Fail: ${fail}, Skipped: ${skipped}`);
-  }, [selected, customerData, map, sgFrom, sgReplyTo]);
+    await new Promise(r => setTimeout(r, 150));
+  }
+  setSending(false);
+  alert(`Done. Success: ${ok}, Fail: ${fail}, Skipped: ${skipped}`);
+}, [selected, customerData, map, sgFrom, sgReplyTo]);
 
   return (
     <div style={{ padding: 20 }}>
