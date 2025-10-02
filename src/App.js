@@ -147,6 +147,13 @@ function htmlEmailTemplate({
             </td>
           </tr>
           <tr>
+  <td style="padding:16px;text-align:center;background:#ffffff;">
+    <img src="https://<your-vercel-app>.vercel.app/logo.png"
+         alt="Paramount Liquor"
+         style="max-height:60px;max-width:200px;" />
+  </td>
+
+          <tr>
             <td style="padding:24px;">
               <p>Dear <strong>${customerName}</strong>,</p>
               <p>Our system is showing that the following invoices are currently overdue:</p>
