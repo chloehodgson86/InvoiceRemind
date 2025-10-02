@@ -131,7 +131,11 @@ function htmlEmailTemplate({
     </table>
   ` : "";
 
-  const replyHref = replyTo ? `mailto:${encodeURIComponent(replyTo)}?subject=${encodeURIComponent(subject)}` : "#";
+  const replyHref = replyTo
+    ? `mailto:${encodeURIComponent(replyTo)}?subject=${encodeURIComponent(subject)}`
+    : "#";
+
+  const logoUrl = "https://invoice-remind.vercel.app/logo.png";
 
   return `<!doctype html>
 <html>
@@ -140,19 +144,22 @@ function htmlEmailTemplate({
     <tr>
       <td align="center">
         <table role="presentation" width="640" style="max-width:640px;background:#fff;border:1px solid ${BRAND.border};border-radius:12px;overflow:hidden;">
+          <!-- Header bar -->
           <tr>
             <td style="background:${BRAND.primary};color:#fff;padding:18px 20px;">
               <span style="font-size:18px;font-weight:700;">${BRAND.name}</span>
               <span style="font-size:12px;opacity:.85;margin-left:8px;">${BRAND.dept}</span>
             </td>
           </tr>
-          <tr>
-  <td style="padding:16px;text-align:center;background:#ffffff;">
-    <img src="https://<your-vercel-app>.vercel.app/logo.png"
-         alt="Paramount Liquor"
-         style="max-height:60px;max-width:200px;" />
-  </td>
 
+          <!-- Logo row -->
+          <tr>
+            <td style="padding:16px;text-align:center;background:#ffffff;">
+              <img src="${logoUrl}" alt="Paramount Liquor" style="max-height:60px;max-width:200px;" />
+            </td>
+          </tr>
+
+          <!-- Main body -->
           <tr>
             <td style="padding:24px;">
               <p>Dear <strong>${customerName}</strong>,</p>
@@ -174,24 +181,21 @@ function htmlEmailTemplate({
                 ${creditRows.length ? `Credits: ${money(totalCredits)}<br/>Net payable: ${money(netPayable)}` : ""}
               </div>
               ${creditSection}
-              <p>If these invoices have already been paid, please ignore this reminder. 
-              </p>
-              </p>
-              Otherwise, kindly make prompt payment and send remittance advice to accounts@paramountliquor.com.au</p>
-              <div style="margin:20px 0;">  
-                <a href="${replyHref}" style="background:${BRAND.accent};color:#fff;text-decoration:none;padding:10px 16px;border-radius:8px;font-weight:600;">Reply with remittance</a>  
-                <a href="https://www.paramountliquor.com.au/sign-in" 
-     style="background:#16a34a;color:#fff;text-decoration:none;padding:12px 20px;border-radius:8px;font-weight:600;display:inline-block;">
-    Pay Now
-  </a>
-</div>
-    
+              <p>If these invoices have already been paid, please ignore this reminder.</p>
+              <p>Otherwise, kindly make prompt payment and send remittance advice to <a href="mailto:accounts@paramountliquor.com.au">accounts@paramountliquor.com.au</a>.</p>
+              <div style="margin:20px 0;">
+                <a href="${replyHref}" style="background:${BRAND.accent};color:#fff;text-decoration:none;padding:10px 16px;border-radius:8px;font-weight:600;">Reply with remittance</a>
+                <a href="https://www.paramountliquor.com.au/sign-in" style="background:#16a34a;color:#fff;text-decoration:none;padding:12px 20px;border-radius:8px;font-weight:600;display:inline-block;">Pay Now</a>
+              </div>
               <p>Kind regards,<br/>${BRAND.dept}<br/>${BRAND.name}</p>
             </td>
           </tr>
+
+          <!-- Footer -->
           <tr>
             <td style="text-align:center;color:${BRAND.footer};font-size:12px;padding:12px;">
-              © ${new Date().getFullYear()} ${BRAND.name}
+              © ${new Date().getFullYear()} ${BRAND.name} | ABN 00 000 000 000 | 123 Business St, Melbourne VIC<br/>
+              This is an automated reminder – please contact <a href="mailto:accounts@paramountliquor.com.au">accounts@paramountliquor.com.au</a> if you need assistance.
             </td>
           </tr>
         </table>
@@ -201,6 +205,7 @@ function htmlEmailTemplate({
 </body>
 </html>`;
 }
+
 
 /* ---------------- Main App ---------------- */
 export default function App() {
