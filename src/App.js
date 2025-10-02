@@ -155,7 +155,9 @@ function htmlEmailTemplate({
           <!-- Logo row -->
           <tr>
             <td style="padding:16px;text-align:center;background:#ffffff;">
-              <img src="${logoUrl}" alt="Paramount Liquor" style="max-height:60px;max-width:200px;" />
+             <img src="${logoUrl}" alt="Paramount Liquor" 
+     style="width:250px; height:auto;" />
+
             </td>
           </tr>
 
@@ -194,7 +196,7 @@ function htmlEmailTemplate({
           <!-- Footer -->
           <tr>
             <td style="text-align:center;color:${BRAND.footer};font-size:12px;padding:12px;">
-              © ${new Date().getFullYear()} ${BRAND.name} | ABN 00 000 000 000 | 123 Business St, Melbourne VIC<br/>
+              © ${new Date().getFullYear()} ${BRAND.name} 
               This is an automated reminder – please contact <a href="mailto:accounts@paramountliquor.com.au">accounts@paramountliquor.com.au</a> if you need assistance.
             </td>
           </tr>
