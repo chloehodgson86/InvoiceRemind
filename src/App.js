@@ -149,7 +149,7 @@ function htmlEmailTemplate({
           <tr>
             <td style="padding:24px;">
               <p>Dear <strong>${customerName}</strong>,</p>
-              <p>The following invoices are currently overdue:</p>
+              <p>Our system is showing that the following invoices are currently overdue:</p>
               <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid ${BRAND.border};border-radius:8px;">
                 <thead>
                   <tr style="background:${BRAND.subtle};">
