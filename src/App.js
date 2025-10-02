@@ -152,13 +152,21 @@ function htmlEmailTemplate({
             </td>
           </tr>
 
-          <!-- Logo row (Outlook-safe) -->
-          <tr>
-            <td style="padding:16px 16px 8px 16px;text-align:center;background:#ffffff;">
-              <img src="${logoUrl}" width="240" alt="Paramount Liquor"
-                   style="display:block;height:auto;border:0;outline:none;text-decoration:none;-ms-interpolation-mode:bicubic;max-width:100%;" />
-            </td>
-          </tr>
+       <!-- Logo row (centered for Outlook + all clients) -->
+<tr>
+  <td style="padding:16px;text-align:center;background:#ffffff;">
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center">
+      <tr>
+        <td align="center">
+          <img src="cid:logo"
+               width="240"
+               alt="Paramount Liquor"
+               style="display:block;height:auto;border:0;outline:none;text-decoration:none;-ms-interpolation-mode:bicubic;" />
+        </td>
+      </tr>
+    </table>
+  </td>
+</tr>
 
           <!-- Main body -->
           <tr>
@@ -233,8 +241,8 @@ function htmlEmailTemplate({
           <!-- Footer -->
           <tr>
             <td style="text-align:center;color:${BRAND.footer};font-size:12px;padding:12px;">
-              © ${new Date().getFullYear()} ${BRAND.name} |>
-              This is an automated reminder – please contact <a href="mailto:accounts@paramountliquor.com.au">accounts@paramountliquor.com.au</a> if you need assistance.
+              © ${new Date().getFullYear()} ${BRAND.name} >
+              | This is an automated reminder – please contact <a href="mailto:accounts@paramountliquor.com.au">accounts@paramountliquor.com.au</a> if you need assistance.
             </td>
           </tr>
         </table>
