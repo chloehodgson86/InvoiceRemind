@@ -33,6 +33,17 @@ const cur = (n) => `$${num(Math.abs(Number(n) || 0))}`;
 
 // Always show as -$X.XX (for credits)
 const curNeg = (n) => `- $${num(Math.abs(Number(n) || 0))}`;
+// Coerce numbers from strings like "$1,234.56", "1,234.56", "(123.45)"
+const toNum = (v) => {
+  if (typeof v === "number") return v;
+  if (v == null) return 0;
+  let s = String(v).trim();
+  const neg = /^\(.*\)$/.test(s);   // (123.45) -> negative
+  if (neg) s = s.slice(1, -1);
+  s = s.replace(/[$,\s]/g, "");     // remove $, commas, spaces
+  const n = Number(s);
+  return (neg ? -1 : 1) * (isNaN(n) ? 0 : n);
+};
 
 // Preserve the sign (for things like Net Payable which could be negative in edge cases)
 const curSigned = (n) => {
@@ -145,12 +156,13 @@ const amt =
     // Totals
 const totals = {
   totalOverdue:
-    typeof dyn.totalOverdue === "number" ? cur(dyn.totalOverdue) : dyn.totalOverdue,
+    dyn.totalOverdue == null ? "" : cur(toNum(dyn.totalOverdue)),
   totalCredits:
-    typeof dyn.totalCredits === "number" ? curNeg(dyn.totalCredits) : dyn.totalCredits, // <- negative
+    dyn.totalCredits == null ? "" : curNeg(toNum(dyn.totalCredits)), // ← always negative
   netPayable:
-    typeof dyn.netPayable === "number" ? curSigned(dyn.netPayable) : dyn.netPayable,
+    dyn.netPayable == null ? "" : curSigned(toNum(dyn.netPayable)),
 };
+
 
 
     // Inline CID logo (optional)
