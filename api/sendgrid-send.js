@@ -53,7 +53,7 @@ export default async function handler(req, res) {
       totalOverdue: safe(dynamicData.totalOverdue, totalOverdue),
       totalCredits: safe(dynamicData.totalCredits, totalCredits),
       netPayable: safe(dynamicData.netPayable, netPayable),
-      payNowUrl: safe(dynamicData.payNowUrl, "https://www.paramountliquor.com.au/signin"),
+      payNowUrl: safe(dynamicData.payNowUrl, "https://www.paramountliquor.com.au/sign-in"),
       replyHref: dynamicData.replyHref,
       subject: safe(dynamicData.subject, rawSubject), // may be provided; else we compute below
     };
