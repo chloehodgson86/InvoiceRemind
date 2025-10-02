@@ -152,18 +152,17 @@ function htmlEmailTemplate({
             </td>
           </tr>
 
-          <!-- Logo row -->
+          <!-- Logo row (Outlook-safe) -->
           <tr>
-            <td style="padding:16px;text-align:center;background:#ffffff;">
-             <img src="${logoUrl}" alt="Paramount Liquor" 
-     style="width:250px; height:auto;" />
-
+            <td style="padding:16px 16px 8px 16px;text-align:center;background:#ffffff;">
+              <img src="${logoUrl}" width="240" alt="Paramount Liquor"
+                   style="display:block;height:auto;border:0;outline:none;text-decoration:none;-ms-interpolation-mode:bicubic;max-width:100%;" />
             </td>
           </tr>
 
           <!-- Main body -->
           <tr>
-            <td style="padding:24px;">
+            <td style="padding:16px 24px 24px 24px;">
               <p>Dear <strong>${customerName}</strong>,</p>
               <p>Our system is showing that the following invoices are currently overdue:</p>
               <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid ${BRAND.border};border-radius:8px;">
@@ -175,28 +174,66 @@ function htmlEmailTemplate({
                   </tr>
                 </thead>
                 <tbody>
-                  ${invRows || `<tr><td colspan="3">(none)</td></tr>`}
+                  ${invRows || `<tr><td colspan="3" style="padding:10px 12px;">(none)</td></tr>`}
                 </tbody>
               </table>
-              <div style="margin:16px 0;padding:12px;background:${BRAND.subtle};border:1px solid ${BRAND.border};border-radius:8px;">
-                <strong>Total overdue: ${money(totalOverdue)}</strong><br/>
-                ${creditRows.length ? `Credits: ${money(totalCredits)}<br/>Net payable: ${money(netPayable)}` : ""}
-              </div>
+
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${BRAND.subtle};border:1px solid ${BRAND.border};border-radius:8px;">
+                <tr>
+                  <td style="padding:12px;">
+                    <strong>Total overdue: ${money(totalOverdue)}</strong><br/>
+                    ${creditRows.length ? `Credits: ${money(totalCredits)}<br/>Net payable: ${money(netPayable)}` : ""}
+                  </td>
+                </tr>
+              </table>
+
               ${creditSection}
-              <p>If these invoices have already been paid, please ignore this reminder.</p>
+
+              <p style="padding-top:8px;">If these invoices have already been paid, please ignore this reminder.</p>
               <p>Otherwise, kindly make prompt payment and send remittance advice to <a href="mailto:accounts@paramountliquor.com.au">accounts@paramountliquor.com.au</a>.</p>
-              <div style="margin:20px 0;">
-                <a href="${replyHref}" style="background:${BRAND.accent};color:#fff;text-decoration:none;padding:10px 16px;border-radius:8px;font-weight:600;">Reply with remittance</a>
-                <a href="https://www.paramountliquor.com.au/sign-in" style="background:#16a34a;color:#fff;text-decoration:none;padding:12px 20px;border-radius:8px;font-weight:600;display:inline-block;">Pay Now</a>
-              </div>
-              <p>Kind regards,<br/>${BRAND.dept}<br/>${BRAND.name}</p>
+
+              <!-- Buttons row (bulletproof for Outlook) -->
+              <table role="presentation" cellpadding="0" cellspacing="0" style="padding-top:8px;">
+                <tr>
+                  <td style="padding-right:12px;">
+                    <!--[if mso]>
+                    <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" href="${replyHref}" arcsize="10%" stroke="f" fillcolor="${BRAND.accent}" style="height:40px;v-text-anchor:middle;width:220px;">
+                      <w:anchorlock/>
+                      <center style="color:#ffffff;font-family:Arial,sans-serif;font-size:14px;font-weight:700;">
+                        Reply with remittance
+                      </center>
+                    </v:roundrect>
+                    <![endif]-->
+                    <!--[if !mso]><!-- --><a href="${replyHref}"
+                      style="background:${BRAND.accent};color:#fff;text-decoration:none;padding:12px 18px;border-radius:8px;font-weight:700;display:inline-block;">
+                      Reply with remittance
+                    </a><!--<![endif]-->
+                  </td>
+                  <td>
+                    <!--[if mso]>
+                    <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" href="https://www.paramountliquor.com.au/sign-in" arcsize="10%" stroke="f" fillcolor="#16a34a" style="height:40px;v-text-anchor:middle;width:140px;">
+                      <w:anchorlock/>
+                      <center style="color:#ffffff;font-family:Arial,sans-serif;font-size:14px;font-weight:700;">
+                        Pay Now
+                      </center>
+                    </v:roundrect>
+                    <![endif]-->
+                    <!--[if !mso]><!-- --><a href="https://www.paramountliquor.com.au/sign-in"
+                      style="background:#16a34a;color:#fff;text-decoration:none;padding:12px 18px;border-radius:8px;font-weight:700;display:inline-block;">
+                      Pay Now
+                    </a><!--<![endif]-->
+                  </td>
+                </tr>
+              </table>
+
+              <p style="padding-top:16px;">Kind regards,<br/>${BRAND.dept}<br/>${BRAND.name}</p>
             </td>
           </tr>
 
           <!-- Footer -->
           <tr>
             <td style="text-align:center;color:${BRAND.footer};font-size:12px;padding:12px;">
-              © ${new Date().getFullYear()} ${BRAND.name} 
+              © ${new Date().getFullYear()} ${BRAND.name} >
               This is an automated reminder – please contact <a href="mailto:accounts@paramountliquor.com.au">accounts@paramountliquor.com.au</a> if you need assistance.
             </td>
           </tr>
