@@ -1,18 +1,15 @@
 // /api/sendgrid-send.js
-// Sends via SendGrid. If a Dynamic Template is used, this will build the
-// dynamic_template_data your template expects (invoiceRows, creditSection, etc).
-// Also attaches an inline CID logo for maximum compatibility.
+// Sends via SendGrid using a Dynamic Template. Auto-builds dynamic_template_data
+// (invoiceRows, creditSection, totals) and attaches an inline CID logo.
 
 function money(value) {
   if (value == null) return "";
   if (typeof value === "number") {
-    return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2, style: "currency", currency: "AUD" });
+    return value.toLocaleString(undefined, { style: "currency", currency: "AUD", minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }
-  // If already formatted (e.g., "$123.45"), just return
   return String(value);
 }
 
-// Build HTML rows for the invoice table
 function buildInvoiceRows(overdueRows = []) {
   if (!Array.isArray(overdueRows) || overdueRows.length === 0) {
     return `<tr><td colspan="3" style="padding:10px;border-bottom:1px solid #e5e7eb;">(none)</td></tr>`;
@@ -31,7 +28,6 @@ function buildInvoiceRows(overdueRows = []) {
   }).join("");
 }
 
-// Build the credits section (optional). Returns HTML string or "".
 function buildCreditSection(creditRows = []) {
   if (!Array.isArray(creditRows) || creditRows.length === 0) return "";
   const rows = creditRows.map(cr => {
@@ -64,24 +60,21 @@ function buildCreditSection(creditRows = []) {
   `;
 }
 
-// Merge user-provided dynamicData with auto-built fields (invoiceRows, creditSection, etc.)
 function buildDynamicData(body) {
   const dd = { ...(body.dynamicData || {}) };
 
-  // If caller already provided the HTML chunks, trust them.
   if (!dd.invoiceRows) dd.invoiceRows = buildInvoiceRows(body.overdueRows);
   if (!dd.creditSection) dd.creditSection = buildCreditSection(body.creditRows);
 
-  if (dd.totalOverdue == null && (body.totalOverdue != null)) dd.totalOverdue = money(body.totalOverdue);
-  if (dd.totalCredits == null && (body.totalCredits != null)) dd.totalCredits = money(body.totalCredits);
-  if (dd.netPayable == null && (body.netPayable != null)) dd.netPayable = money(body.netPayable);
+  if (dd.totalOverdue == null && body.totalOverdue != null) dd.totalOverdue = money(body.totalOverdue);
+  if (dd.totalCredits == null && body.totalCredits != null) dd.totalCredits = money(body.totalCredits);
+  if (dd.netPayable == null && body.netPayable != null) dd.netPayable = money(body.netPayable);
 
   if (dd.credits == null) dd.credits = Array.isArray(body.creditRows) && body.creditRows.length > 0;
 
   if (!dd.customerName && body.customerName) dd.customerName = body.customerName;
 
   if (!dd.replyHref) {
-    // Build mailto from replyTo + subject if available
     const replyTo = body.replyTo || body.dynamicData?.replyTo;
     const subject = body.subject || body.dynamicData?.subject || "Invoice reminder";
     dd.replyHref = replyTo ? `mailto:${encodeURIComponent(replyTo)}?subject=${encodeURIComponent(subject)}` : "#";
@@ -101,26 +94,14 @@ export default async function handler(req, res) {
       (await req.json?.()) ||
       {};
 
-    const {
-      to,
-      from,
-      replyTo,
-      subject,     // used only for raw HTML path
-      text,        // used only for raw HTML path
-      html,        // used only for raw HTML path
-      templateId,  // if present we use Dynamic Template
-    } = body;
+    const { to, from, replyTo, subject, text, html, templateId } = body;
 
-    if (!to || !from) {
-      return res.status(400).json({ error: "Missing 'to' or 'from'." });
-    }
+    if (!to || !from) return res.status(400).json({ error: "Missing 'to' or 'from'." });
 
     const apiKey = process.env.SENDGRID_API_KEY;
-    if (!apiKey) {
-      return res.status(500).json({ error: "SENDGRID_API_KEY not set" });
-    }
+    if (!apiKey) return res.status(500).json({ error: "SENDGRID_API_KEY not set" });
 
-    // --- Attach inline CID logo (safe even if template uses hosted URL) ---
+    // Attach CID logo (for src="cid:logo")
     const publicLogoUrl = process.env.LOGO_URL || "https://invoice-remind.vercel.app/logo.png";
     let inlineLogoAttachment = null;
     try {
@@ -132,77 +113,36 @@ export default async function handler(req, res) {
           filename: "logo.png",
           type: r.headers.get("content-type") || "image/png",
           disposition: "inline",
-          content_id: "logo", // can be referenced with src="cid:logo"
+          content_id: "logo",
         };
       }
-    } catch {
-      // skip if fetch fails
-    }
+    } catch {}
 
     const headers = {
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
     };
 
-    // Base common fields
     const base = {
       from: { email: from },
-      personalizations: [],
       ...(replyTo ? { reply_to: { email: replyTo } } : {}),
       ...(inlineLogoAttachment ? { attachments: [inlineLogoAttachment] } : {}),
     };
 
     let payload;
-
     if (templateId) {
-      // Build dynamic_template_data automatically from body, allowing the caller to override any field.
       const dynamic_template_data = buildDynamicData(body);
-
       payload = {
         ...base,
-        personalizations: [
-          {
-            to: [{ email: to }],
-            dynamic_template_data,
-          },
-        ],
+        personalizations: [{ to: [{ email: to }], dynamic_template_data }],
         template_id: templateId,
       };
     } else {
-      // Raw HTML send (no template)
+      // Fallback: raw HTML
       const content = [];
       if (text) content.push({ type: "text/plain", value: text });
       if (html) content.push({ type: "text/html", value: html });
-
       payload = {
         ...base,
-        personalizations: [
-          {
-            to: [{ email: to }],
-            ...(subject ? { subject } : {}),
-          },
-        ],
-        ...(content.length ? { content } : {}),
-      };
-    }
+        personalizations: [{ to: [{ email:]()]()
 
-    const resp = await fetch("https://api.sendgrid.com/v3/mail/send", {
-      method: "POST",
-      headers,
-      body: JSON.stringify(payload),
-    });
-
-    if (!resp.ok) {
-      const errTxt = await resp.text();
-      return res.status(resp.status).json({ error: errTxt });
-    }
-
-    return res.status(200).json({
-      ok: true,
-      inlineLogoAttached: Boolean(inlineLogoAttachment),
-      usingTemplate: Boolean(templateId),
-    });
-  } catch (e) {
-    return res.status(500).json({ error: e?.message || "Unknown error" });
-  }
-}
