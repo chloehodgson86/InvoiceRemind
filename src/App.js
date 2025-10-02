@@ -260,6 +260,8 @@ export default function App() {
     const totalCredits = creditRows.reduce((s, r) => s + Math.abs(r.amt), 0);
     const netPayable = totalOverdue - totalCredits;
 
+      if (overdueRows.length === 0) return null;
+    if (netPayable <= 0) return null;
     const subject = `Paramount Liquor Overdue Invoices - ${customerName}`;
     const textBody = `Dear ${customerName},
 
