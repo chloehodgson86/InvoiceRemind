@@ -152,7 +152,7 @@ function htmlEmailTemplate({
             </td>
           </tr>
 
-       <!-- Logo row (centered for Outlook + all clients) -->
+<!-- Logo row -->
 <tr>
   <td style="padding:16px;text-align:center;background:#ffffff;">
     <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center">
@@ -167,6 +167,7 @@ function htmlEmailTemplate({
     </table>
   </td>
 </tr>
+
 
           <!-- Main body -->
           <tr>
