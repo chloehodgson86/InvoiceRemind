@@ -9,25 +9,10 @@ export default async function handler(req, res) {
       {};
 
     const {
-      to,                 // string or string[]
-      from,               // required
-      replyTo,            // optional (string or {email,name})
-      bcc,                // optional
-      templateId,         // required: your SendGrid dynamic template id
-
-      // optional raw subject; we still compute a fallback
+      to, from, replyTo, bcc, templateId,
       subject: rawSubject,
-
-      // preferred container for template data
       dynamicData = {},
-
-      // top-level fallbacks (if you send them directly)
-      customerName,
-      overdueRows,
-      creditRows,
-      totalOverdue,
-      totalCredits,
-      netPayable,
+      customerName, overdueRows, creditRows, totalOverdue, totalCredits, netPayable,
     } = body;
 
     if (!to || !from || !templateId) {
@@ -37,11 +22,29 @@ export default async function handler(req, res) {
     const apiKey = process.env.SENDGRID_API_KEY;
     if (!apiKey) return res.status(500).json({ error: "SENDGRID_API_KEY not set" });
 
-    // ---------------- helpers ----------------
+    /* ---------------- helpers ---------------- */
     const asArray = (v) => (Array.isArray(v) ? v.filter(Boolean) : v ? [v] : []);
     const money = (n) =>
       (Number(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     const safe = (v, d = "") => (v == null ? d : v);
+
+    // Decode common HTML entities so subjects show real characters (', ", &, etc.)
+    const decodeEntities = (s) => {
+      if (typeof s !== "string") return s;
+      const map = {
+        "&amp;": "&",
+        "&lt;": "<",
+        "&gt;": ">",
+        "&quot;": '"',
+        "&#39;": "'",
+        "&#x27;": "'",
+        "&apos;": "'",
+      };
+      return s
+        .replace(/(&amp;|&lt;|&gt;|&quot;|&#39;|&#x27;|&apos;)/g, (m) => map[m])
+        .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(parseInt(n, 10)))
+        .replace(/&#x([0-9a-fA-F]+);/g, (_, n) => String.fromCharCode(parseInt(n, 16)));
+    };
 
     const dyn = {
       customerName: safe(dynamicData.customerName, customerName),
@@ -50,24 +53,24 @@ export default async function handler(req, res) {
       totalOverdue: safe(dynamicData.totalOverdue, totalOverdue),
       totalCredits: safe(dynamicData.totalCredits, totalCredits),
       netPayable: safe(dynamicData.netPayable, netPayable),
-      // even if your template uses "Overdue Invoice Reminder — {{customerName}}",
-      // we'll also pass a computed string so you can switch the template to {{subject}} anytime.
-      subject:
-        safe(dynamicData.subject, rawSubject) ||
-        `Overdue Invoice Reminder — ${safe(dynamicData.customerName, customerName) || "Customer"}`,
-      // Always give Pay Now a real destination
-      payNowUrl: safe(dynamicData.payNowUrl, "https://www.paramountliquor.com.au/"),
-      replyHref: dynamicData.replyHref, // optional full override
+      payNowUrl: safe(dynamicData.payNowUrl, "https://www.paramountliquor.com.au/signin"),
+      replyHref: dynamicData.replyHref,
+      subject: safe(dynamicData.subject, rawSubject), // may be provided; else we compute below
     };
 
-    // Build the mailto used by your "Reply with remittance" button if not overridden
+    // Build the subject in your requested format, de-encoding any entities first
+    const nameText = decodeEntities(dyn.customerName || "Customer");
+    const computedSubject =
+      dyn.subject || `Paramount Liquor - Overdue Invoice Reminder - ${nameText}`;
+
+    // Build reply mailto (uses the computed subject)
     const replyHref =
       dyn.replyHref ||
       (replyTo
-        ? `mailto:${typeof replyTo === "string" ? encodeURIComponent(replyTo) : encodeURIComponent(replyTo.email)}?subject=${encodeURIComponent(dyn.subject)}`
-        : `mailto:accounts@paramountliquor.com.au?subject=${encodeURIComponent(dyn.subject)}`);
+        ? `mailto:${typeof replyTo === "string" ? encodeURIComponent(replyTo) : encodeURIComponent(replyTo.email)}?subject=${encodeURIComponent(computedSubject)}`
+        : `mailto:accounts@paramountliquor.com.au?subject=${encodeURIComponent(computedSubject)}`);
 
-    // Build invoice rows
+    // Build invoice rows HTML
     const invoiceRowsHtml =
       dyn.overdueRows.length
         ? dyn.overdueRows
@@ -86,7 +89,7 @@ export default async function handler(req, res) {
             .join("")
         : `<tr><td colspan="3" style="padding:10px;">(none)</td></tr>`;
 
-    // Credits section (optional)
+    // Credits section HTML (optional)
     const creditSectionHtml =
       (dyn.creditRows || []).length
         ? `
@@ -120,7 +123,7 @@ export default async function handler(req, res) {
           </table>`
         : "";
 
-    // Format totals
+    // Totals
     const totals = {
       totalOverdue: typeof dyn.totalOverdue === "number" ? `$${money(dyn.totalOverdue)}` : dyn.totalOverdue,
       totalCredits: typeof dyn.totalCredits === "number" ? `$${money(dyn.totalCredits)}` : dyn.totalCredits,
@@ -139,12 +142,12 @@ export default async function handler(req, res) {
           filename: "logo.png",
           type: r.headers.get("content-type") || "image/png",
           disposition: "inline",
-          content_id: "logo", // <img src="cid:logo">
+          content_id: "logo",
         };
       }
     } catch {}
 
-    // Build payload
+    // Build SendGrid payload
     const headers = { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" };
     const toList = asArray(to).map((email) => ({ email }));
     const bccList = asArray(bcc).map((email) => ({ email }));
@@ -152,9 +155,9 @@ export default async function handler(req, res) {
     const personalization = {
       to: toList,
       ...(bccList.length ? { bcc: bccList } : {}),
-      // NOTE: SendGrid uses the Dynamic Template's Subject field.
-      // We ALSO set personalizations.subject for safety, but the template subject wins.
-      subject: dyn.subject,
+      // This is ignored when the template's Subject is set to a static string,
+      // but included for completeness. We drive the subject via {{subject}}.
+      subject: computedSubject,
       dynamic_template_data: {
         customerName: dyn.customerName || "",
         invoiceRows: invoiceRowsHtml,
@@ -163,9 +166,9 @@ export default async function handler(req, res) {
         totalOverdue: totals.totalOverdue ?? "",
         totalCredits: totals.totalCredits ?? "",
         netPayable: totals.netPayable ?? "",
-        payNowUrl: dyn.payNowUrl,     // always points to your website by default
+        payNowUrl: dyn.payNowUrl,
         replyHref,
-        subject: dyn.subject,         // only used if your template Subject is {{subject}}
+        subject: computedSubject,   // <- used by {{subject}} in the template Subject field
         year: new Date().getFullYear(),
       },
     };
@@ -181,10 +184,6 @@ export default async function handler(req, res) {
       personalizations: [personalization],
       template_id: templateId,
     };
-
-    // Debug logs (visible in your server logs)
-    console.log("[sendgrid] subject:", dyn.subject);
-    console.log("[sendgrid] payNowUrl:", dyn.payNowUrl);
 
     const resp = await fetch("https://api.sendgrid.com/v3/mail/send", {
       method: "POST",
@@ -202,3 +201,4 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: e?.message || "Unknown error" });
   }
 }
+
