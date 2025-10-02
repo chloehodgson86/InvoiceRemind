@@ -233,7 +233,7 @@ function htmlEmailTemplate({
           <!-- Footer -->
           <tr>
             <td style="text-align:center;color:${BRAND.footer};font-size:12px;padding:12px;">
-              © ${new Date().getFullYear()} ${BRAND.name} >
+              © ${new Date().getFullYear()} ${BRAND.name} |>
               This is an automated reminder – please contact <a href="mailto:accounts@paramountliquor.com.au">accounts@paramountliquor.com.au</a> if you need assistance.
             </td>
           </tr>
