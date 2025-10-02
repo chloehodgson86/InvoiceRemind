@@ -15,6 +15,9 @@ const BRAND = {
   footer: "#64748b",
 };
 
+// hosted logo (for in-app preview only; real emails use CID via SendGrid)
+const PREVIEW_LOGO = "https://invoice-remind.vercel.app/logo.png";
+
 /* ---------------- Helpers ---------------- */
 function toDate(v) {
   if (!v) return null;
@@ -27,7 +30,7 @@ function daysOverdue(due, base = new Date()) {
   return Math.floor((base - d) / (1000 * 60 * 60 * 24));
 }
 function money(n) {
-  const abs = Math.abs(n).toLocaleString(undefined, {
+  const abs = Math.abs(Number(n) || 0).toLocaleString(undefined, {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
@@ -86,6 +89,71 @@ function autoMap(headers) {
   };
 }
 
+/* ---------------- Local preview HTML (browser only) ---------------- */
+function buildPreviewHtml({ customerName, overdueRows, creditRows, totalOverdue, totalCredits, netPayable }) {
+  const inv = (overdueRows.length
+    ? overdueRows.map(r => `
+        <tr>
+          <td style="padding:10px;border-bottom:1px solid ${BRAND.border};">${r.inv ?? ""}</td>
+          <td style="padding:10px;border-bottom:1px solid ${BRAND.border};text-align:right;">${money(r.amt)}</td>
+          <td style="padding:10px;border-bottom:1px solid ${BRAND.border};text-align:right;">${r.due ?? ""}</td>
+        </tr>
+      `).join("")
+    : `<tr><td colspan="3" style="padding:10px;">(none)</td></tr>`);
+
+  const creditsHtml = (creditRows.length
+    ? `
+      <h3 style="margin:24px 0 8px 0;font-size:16px;color:${BRAND.text};">Unapplied credits</h3>
+      <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;background:#fff;border:1px solid ${BRAND.border};border-radius:8px;overflow:hidden;">
+        <thead>
+          <tr style="background:${BRAND.subtle};">
+            <th align="left"  style="padding:10px 12px;font-size:12px;color:${BRAND.muted};">Reference</th>
+            <th align="right" style="padding:10px 12px;font-size:12px;color:${BRAND.muted};">Amount</th>
+            <th align="right" style="padding:10px 12px;font-size:12px;color:${BRAND.muted};">Date</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${creditRows.map(cr => `
+            <tr>
+              <td style="padding:10px 12px;border-bottom:1px solid ${BRAND.border};">${cr.ref ?? ""}</td>
+              <td style="padding:10px 12px;border-bottom:1px solid ${BRAND.border};text-align:right;">${money(cr.amt)}</td>
+              <td style="padding:10px 12px;border-bottom:1px solid ${BRAND.border};text-align:right;">${cr.date ?? ""}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>`
+    : "");
+
+  return `
+  <div style="max-width:640px;border:1px solid ${BRAND.border};border-radius:12px;overflow:hidden;background:#fff">
+    <div style="background:${BRAND.primary};color:#fff;padding:18px 20px;font-weight:700;">${BRAND.name}
+      <span style="font-weight:400;opacity:.85;margin-left:8px;">${BRAND.dept}</span>
+    </div>
+    <div style="padding:16px;text-align:center;background:#fff;">
+      <img src="${PREVIEW_LOGO}" alt="Paramount Liquor" style="max-width:360px;height:auto;display:block;margin:0 auto;" />
+    </div>
+    <div style="padding:24px;color:${BRAND.text};font-family:Arial,sans-serif;">
+      <p>Dear <strong>${customerName}</strong>,</p>
+      <p>Our system is showing that the following invoices are currently overdue:</p>
+      <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid ${BRAND.border};border-radius:8px;">
+        <thead>
+          <tr style="background:${BRAND.subtle};">
+            <th align="left" style="padding:10px;font-size:12px;color:${BRAND.muted};">Invoice</th>
+            <th align="right" style="padding:10px;font-size:12px;color:${BRAND.muted};">Amount</th>
+            <th align="right" style="padding:10px;font-size:12px;color:${BRAND.muted};">Due Date</th>
+          </tr>
+        </thead>
+        <tbody>${inv}</tbody>
+      </table>
+      <div style="margin:16px 0;padding:12px;background:${BRAND.subtle};border:1px solid ${BRAND.border};border-radius:8px;">
+        <strong>Total overdue: ${money(totalOverdue)}</strong><br/>
+        ${creditRows.length ? `Credits: ${money(totalCredits)}<br/>Net payable: ${money(netPayable)}` : ""}
+      </div>
+      ${creditsHtml}
+    </div>
+  </div>`;
+}
+
 /* ---------------- Main App ---------------- */
 export default function App() {
   useEffect(() => {
@@ -139,63 +207,62 @@ export default function App() {
     return { all: Array.from(byName.keys()), byName };
   }, [rows, map]);
 
-  // Send via SendGrid Dynamic Template
-  // Send via SendGrid
-const sendSelectedViaSendGrid = useCallback(async () => {
-  const list = Array.from(selected);
-  if (!list.length) return;
-  if (!sgFrom) {
-    alert("Enter a From address verified in SendGrid.");
-    return;
-  }
-  setSending(true);
-  let ok = 0, fail = 0, skipped = 0;
-
-  for (const name of list) {
-    const data = customerData.byName.get(name);
-    if (!data) { skipped++; continue; }
-
-    const custRows = data.rows;
-    const overdueRows = custRows.filter(r => cleanNumber(r[map.amount]) > 0)
-      .map(r => ({ inv: r[map.invoice], due: r[map.dueDate], amt: cleanNumber(r[map.amount]) }));
-    const creditRows = custRows.filter(r => cleanNumber(r[map.amount]) < 0)
-      .map(r => ({ ref: r[map.invoice], date: r[map.dueDate], amt: cleanNumber(r[map.amount]) }));
-
-    const totalOverdue = overdueRows.reduce((s, r) => s + r.amt, 0);
-    const totalCredits = creditRows.reduce((s, r) => s + Math.abs(r.amt), 0);
-    const netPayable = totalOverdue - totalCredits;
-
-    if (overdueRows.length === 0 || netPayable <= 0) { skipped++; continue; }
-
-    const subject = `Paramount Liquor Overdue Invoices - ${name}`;
-
-    try {
-      const res = await fetch("/api/sendgrid-send", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          to: data.email,
-          from: sgFrom,
-          replyTo: sgReplyTo || undefined,
-          templateId: "d-c32e5033436a4186a760c43071a0a103", // ✅ your template ID
-          customerName: name,
-          overdueRows,
-          creditRows,
-          totalOverdue: money(totalOverdue),
-          totalCredits: money(totalCredits),
-          netPayable: money(netPayable),
-          subject,
-        }),
-      });
-      if (res.ok) ok++; else fail++;
-    } catch {
-      fail++;
+  /* -------------- Send via SendGrid Dynamic Template -------------- */
+  const sendSelectedViaSendGrid = useCallback(async () => {
+    const list = Array.from(selected);
+    if (!list.length) return;
+    if (!sgFrom) {
+      alert("Enter a From address verified in SendGrid.");
+      return;
     }
-    await new Promise(r => setTimeout(r, 150));
-  }
-  setSending(false);
-  alert(`Done. Success: ${ok}, Fail: ${fail}, Skipped: ${skipped}`);
-}, [selected, customerData, map, sgFrom, sgReplyTo]);
+    setSending(true);
+    let ok = 0, fail = 0, skipped = 0;
+
+    for (const name of list) {
+      const data = customerData.byName.get(name);
+      if (!data) { skipped++; continue; }
+
+      const custRows = data.rows;
+      const overdueRows = custRows.filter(r => cleanNumber(r[map.amount]) > 0)
+        .map(r => ({ inv: r[map.invoice], due: r[map.dueDate], amt: cleanNumber(r[map.amount]) }));
+      const creditRows = custRows.filter(r => cleanNumber(r[map.amount]) < 0)
+        .map(r => ({ ref: r[map.invoice], date: r[map.dueDate], amt: cleanNumber(r[map.amount]) }));
+
+      const totalOverdue = overdueRows.reduce((s, r) => s + r.amt, 0);
+      const totalCredits = creditRows.reduce((s, r) => s + Math.abs(r.amt), 0);
+      const netPayable = totalOverdue - totalCredits;
+
+      if (overdueRows.length === 0 || netPayable <= 0) { skipped++; continue; }
+
+      const subject = `Paramount Liquor Overdue Invoices - ${name}`;
+
+      try {
+        const res = await fetch("/api/sendgrid-send", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            to: data.email,
+            from: sgFrom,
+            replyTo: sgReplyTo || undefined,
+            templateId: "d-c32e5033436a4186a760c43071a0a103",
+            customerName: name,
+            overdueRows,
+            creditRows,
+            totalOverdue: money(totalOverdue),
+            totalCredits: money(totalCredits),
+            netPayable: money(netPayable),
+            subject,
+          }),
+        });
+        if (res.ok) ok++; else fail++;
+      } catch {
+        fail++;
+      }
+      await new Promise(r => setTimeout(r, 150));
+    }
+    setSending(false);
+    alert(`Done. Success: ${ok}, Fail: ${fail}, Skipped: ${skipped}`);
+  }, [selected, customerData, map, sgFrom, sgReplyTo]);
 
   return (
     <div style={{ padding: 20 }}>
@@ -212,6 +279,27 @@ const sendSelectedViaSendGrid = useCallback(async () => {
 
       {customerData.all.map(cust => {
         const data = customerData.byName.get(cust);
+        if (!data) return null;
+
+        // Build same structures used for sending, for preview purposes
+        const custRows = data.rows;
+        const overdueRows = custRows.filter(r => cleanNumber(r[map.amount]) > 0)
+          .map(r => ({ inv: r[map.invoice], due: r[map.dueDate], amt: cleanNumber(r[map.amount]) }));
+        const creditRows = custRows.filter(r => cleanNumber(r[map.amount]) < 0)
+          .map(r => ({ ref: r[map.invoice], date: r[map.dueDate], amt: cleanNumber(r[map.amount]) }));
+        const totalOverdue = overdueRows.reduce((s, r) => s + r.amt, 0);
+        const totalCredits = creditRows.reduce((s, r) => s + Math.abs(r.amt), 0);
+        const netPayable = totalOverdue - totalCredits;
+
+        const previewHtml = buildPreviewHtml({
+          customerName: cust,
+          overdueRows,
+          creditRows,
+          totalOverdue,
+          totalCredits,
+          netPayable
+        });
+
         return (
           <div key={cust} style={{ marginTop: 20, border: "1px solid #ccc", padding: 12 }}>
             <label>
@@ -226,6 +314,11 @@ const sendSelectedViaSendGrid = useCallback(async () => {
               />
               <strong>{cust}</strong> ({data.email || "no email"})
             </label>
+
+            <details style={{ marginTop: 8 }}>
+              <summary>Preview</summary>
+              <div dangerouslySetInnerHTML={{ __html: previewHtml }} />
+            </details>
           </div>
         );
       })}
