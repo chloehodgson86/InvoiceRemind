@@ -15,7 +15,7 @@ const BRAND = {
   footer: "#64748b",
 };
 
-// hosted logo (for in-app preview only; real emails use CID via SendGrid)
+// Hosted logo for in-app preview (emails use CID via SendGrid backend)
 const PREVIEW_LOGO = "https://invoice-remind.vercel.app/logo.png";
 
 /* ---------------- Helpers ---------------- */
@@ -40,21 +40,12 @@ function cleanNumber(v) {
   if (v == null || v === "") return 0;
   let s = String(v).trim().toUpperCase();
   let negative = false;
-  if (s.startsWith("(") && s.endsWith(")")) {
-    negative = true;
-    s = s.slice(1, -1).trim();
-  }
-  if (s.startsWith("-")) {
-    negative = true;
-    s = s.slice(1).trim();
-  }
+  if (s.startsWith("(") && s.endsWith(")")) { negative = true; s = s.slice(1, -1).trim(); }
+  if (s.startsWith("-")) { negative = true; s = s.slice(1).trim(); }
   if (/\bCR\b/.test(s)) negative = true;
   s = s.replace(/[^0-9.,]/g, "");
-  if (s.includes(",") && s.includes(".")) {
-    s = s.replace(/,/g, "");
-  } else if (s.includes(",") && !s.includes(".")) {
-    s = s.replace(/,/g, ".");
-  }
+  if (s.includes(",") && s.includes(".")) s = s.replace(/,/g, "");
+  else if (s.includes(",") && !s.includes(".")) s = s.replace(/,/g, ".");
   const n = Number(s || 0);
   return negative ? -n : n;
 }
@@ -89,9 +80,17 @@ function autoMap(headers) {
   };
 }
 
-/* ---------------- Local preview HTML (browser only) ---------------- */
-function buildPreviewHtml({ customerName, overdueRows, creditRows, totalOverdue, totalCredits, netPayable }) {
-  const inv = (overdueRows.length
+/* ---------------- In-app preview HTML ---------------- */
+function buildPreviewHtml({
+  customerName,
+  overdueRows,
+  creditRows,
+  totalOverdue,
+  totalCredits,
+  netPayable,
+  replyHref,
+}) {
+  const invRows = overdueRows.length
     ? overdueRows.map(r => `
         <tr>
           <td style="padding:10px;border-bottom:1px solid ${BRAND.border};">${r.inv ?? ""}</td>
@@ -99,35 +98,33 @@ function buildPreviewHtml({ customerName, overdueRows, creditRows, totalOverdue,
           <td style="padding:10px;border-bottom:1px solid ${BRAND.border};text-align:right;">${r.due ?? ""}</td>
         </tr>
       `).join("")
-    : `<tr><td colspan="3" style="padding:10px;">(none)</td></tr>`);
+    : `<tr><td colspan="3" style="padding:10px;">(none)</td></tr>`;
 
-  const creditsHtml = (creditRows.length
-    ? `
-      <h3 style="margin:24px 0 8px 0;font-size:16px;color:${BRAND.text};">Unapplied credits</h3>
-      <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;background:#fff;border:1px solid ${BRAND.border};border-radius:8px;overflow:hidden;">
-        <thead>
-          <tr style="background:${BRAND.subtle};">
-            <th align="left"  style="padding:10px 12px;font-size:12px;color:${BRAND.muted};">Reference</th>
-            <th align="right" style="padding:10px 12px;font-size:12px;color:${BRAND.muted};">Amount</th>
-            <th align="right" style="padding:10px 12px;font-size:12px;color:${BRAND.muted};">Date</th>
+  const creditSection = creditRows.length ? `
+    <h3 style="margin:24px 0 8px 0;font-size:16px;color:${BRAND.text};">Unapplied credits</h3>
+    <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;background:#fff;border:1px solid ${BRAND.border};border-radius:8px;overflow:hidden;">
+      <thead>
+        <tr style="background:${BRAND.subtle};">
+          <th align="left"  style="padding:10px 12px;font-size:12px;color:${BRAND.muted};">Reference</th>
+          <th align="right" style="padding:10px 12px;font-size:12px;color:${BRAND.muted};">Amount</th>
+          <th align="right" style="padding:10px 12px;font-size:12px;color:${BRAND.muted};">Date</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${creditRows.map(cr => `
+          <tr>
+            <td style="padding:10px 12px;border-bottom:1px solid ${BRAND.border};">${cr.ref ?? ""}</td>
+            <td style="padding:10px 12px;border-bottom:1px solid ${BRAND.border};text-align:right;">${money(cr.amt)}</td>
+            <td style="padding:10px 12px;border-bottom:1px solid ${BRAND.border};text-align:right;">${cr.date ?? ""}</td>
           </tr>
-        </thead>
-        <tbody>
-          ${creditRows.map(cr => `
-            <tr>
-              <td style="padding:10px 12px;border-bottom:1px solid ${BRAND.border};">${cr.ref ?? ""}</td>
-              <td style="padding:10px 12px;border-bottom:1px solid ${BRAND.border};text-align:right;">${money(cr.amt)}</td>
-              <td style="padding:10px 12px;border-bottom:1px solid ${BRAND.border};text-align:right;">${cr.date ?? ""}</td>
-            </tr>
-          `).join("")}
-        </tbody>
-      </table>`
-    : "");
+        `).join("")}
+      </tbody>
+    </table>` : "";
 
   return `
   <div style="max-width:640px;border:1px solid ${BRAND.border};border-radius:12px;overflow:hidden;background:#fff">
-    <div style="background:${BRAND.primary};color:#fff;padding:18px 20px;font-weight:700;">${BRAND.name}
-      <span style="font-weight:400;opacity:.85;margin-left:8px;">${BRAND.dept}</span>
+    <div style="background:${BRAND.primary};color:#fff;padding:18px 20px;font-weight:700;">
+      ${BRAND.name} <span style="font-weight:400;opacity:.85;margin-left:8px;">${BRAND.dept}</span>
     </div>
     <div style="padding:16px;text-align:center;background:#fff;">
       <img src="${PREVIEW_LOGO}" alt="Paramount Liquor" style="max-width:360px;height:auto;display:block;margin:0 auto;" />
@@ -143,13 +140,31 @@ function buildPreviewHtml({ customerName, overdueRows, creditRows, totalOverdue,
             <th align="right" style="padding:10px;font-size:12px;color:${BRAND.muted};">Due Date</th>
           </tr>
         </thead>
-        <tbody>${inv}</tbody>
+        <tbody>${invRows}</tbody>
       </table>
       <div style="margin:16px 0;padding:12px;background:${BRAND.subtle};border:1px solid ${BRAND.border};border-radius:8px;">
         <strong>Total overdue: ${money(totalOverdue)}</strong><br/>
         ${creditRows.length ? `Credits: ${money(totalCredits)}<br/>Net payable: ${money(netPayable)}` : ""}
       </div>
-      ${creditsHtml}
+      ${creditSection}
+
+      <!-- Buttons (preview only) -->
+      <table role="presentation" cellpadding="0" cellspacing="0" align="center" style="margin:20px auto;">
+        <tr>
+          <td align="center" style="padding-right:8px;">
+            <a href="${replyHref}"
+               style="background:${BRAND.accent};color:#fff;text-decoration:none;padding:12px 18px;border-radius:8px;font-weight:600;display:inline-block;">
+              Reply with remittance
+            </a>
+          </td>
+          <td align="center" style="padding-left:8px;">
+            <a href="https://www.paramountliquor.com.au/sign-in"
+               style="background:#16a34a;color:#fff;text-decoration:none;padding:12px 18px;border-radius:8px;font-weight:600;display:inline-block;">
+              Pay Now
+            </a>
+          </td>
+        </tr>
+      </table>
     </div>
   </div>`;
 }
@@ -187,9 +202,7 @@ export default function App() {
           setMap(guessed);
           headersSet = true;
         }
-        for (const r of data) {
-          buffer.push(r);
-        }
+        for (const r of data) buffer.push(r);
       },
       complete: () => setRows(buffer),
     });
@@ -232,37 +245,36 @@ export default function App() {
       const totalCredits = creditRows.reduce((s, r) => s + Math.abs(r.amt), 0);
       const netPayable = totalOverdue - totalCredits;
 
+      // Skip if nothing owing
       if (overdueRows.length === 0 || netPayable <= 0) { skipped++; continue; }
 
-try {
-  const subject = `Paramount Liquor - Overdue Invoices - ${name}`;
+      try {
+        const subject = `Paramount Liquor - Overdue Invoices - ${name}`;
 
-  const res = await fetch("/api/sendgrid-send", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      to: data.email,
-      from: sgFrom,
-      replyTo: sgReplyTo || undefined,
-      templateId: "d-c32e5033436a4186a760c43071a0a103", // ✅ your template ID
-      dynamicData: {
-        customerName: name,
-        overdueRows,
-        creditRows,
-        totalOverdue: money(totalOverdue),
-        totalCredits: money(totalCredits),
-        netPayable: money(netPayable),
-        subject, // 🔑 inject subject here
-      },
-      subject, // 🔑 ensure subject also comes through at top-level
-    }),
-  });
-
-  if (res.ok) ok++; else fail++;
-} catch {
-  fail++;
-}
-
+        const res = await fetch("/api/sendgrid-send", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            to: data.email,
+            from: sgFrom,
+            replyTo: sgReplyTo || undefined,
+            templateId: "d-c32e5033436a4186a760c43071a0a103",
+            dynamicData: {
+              customerName: name,
+              overdueRows,
+              creditRows,
+              totalOverdue: money(totalOverdue),
+              totalCredits: money(totalCredits),
+              netPayable: money(netPayable),
+              subject,
+            },
+            subject, // top-level subject for the email header
+          }),
+        });
+        if (res.ok) ok++; else fail++;
+      } catch {
+        fail++;
+      }
       await new Promise(r => setTimeout(r, 150));
     }
     setSending(false);
@@ -282,50 +294,61 @@ try {
         </button>
       </div>
 
-  {customerData.all.map(cust => {
-  const data = customerData.byName.get(cust);
-  if (!data) return null;
+      {customerData.all.map(cust => {
+        const data = customerData.byName.get(cust);
+        if (!data) return null;
 
-  const custRows = data.rows;
-  const overdueRows = custRows.filter(r => cleanNumber(r[map.amount]) > 0)
-    .map(r => ({ inv: r[map.invoice], due: r[map.dueDate], amt: cleanNumber(r[map.amount]) }));
-  const creditRows = custRows.filter(r => cleanNumber(r[map.amount]) < 0)
-    .map(r => ({ ref: r[map.invoice], date: r[map.dueDate], amt: cleanNumber(r[map.amount]) }));
+        // Build preview inputs
+        const custRows = data.rows;
+        const overdueRows = custRows.filter(r => cleanNumber(r[map.amount]) > 0)
+          .map(r => ({ inv: r[map.invoice], due: r[map.dueDate], amt: cleanNumber(r[map.amount]) }));
+        const creditRows = custRows.filter(r => cleanNumber(r[map.amount]) < 0)
+          .map(r => ({ ref: r[map.invoice], date: r[map.dueDate], amt: cleanNumber(r[map.amount]) }));
+        const totalOverdue = overdueRows.reduce((s, r) => s + r.amt, 0);
+        const totalCredits = creditRows.reduce((s, r) => s + Math.abs(r.amt), 0);
+        const netPayable = totalOverdue - totalCredits;
 
-  const totalOverdue = overdueRows.reduce((s, r) => s + r.amt, 0);
-  const totalCredits = creditRows.reduce((s, r) => s + Math.abs(r.amt), 0);
-  const netPayable = totalOverdue - totalCredits;
+        // Skip accounts with no amount owing in the list UI
+        if (overdueRows.length === 0 || netPayable <= 0) return null;
 
-  // 🔴 skip if nothing owing
-  if (overdueRows.length === 0 || netPayable <= 0) return null;
+        const subject = `Paramount Liquor - Overdue Invoices - ${cust}`;
+        const replyHref = sgReplyTo
+          ? `mailto:${encodeURIComponent(sgReplyTo)}?subject=${encodeURIComponent(subject)}`
+          : `mailto:accounts@paramountliquor.com.au?subject=${encodeURIComponent(subject)}`;
 
-  const previewHtml = buildPreviewHtml({
-    customerName: cust,
-    overdueRows,
-    creditRows,
-    totalOverdue,
-    totalCredits,
-    netPayable
-  });
+        const previewHtml = buildPreviewHtml({
+          customerName: cust,
+          overdueRows,
+          creditRows,
+          totalOverdue,
+          totalCredits,
+          netPayable,
+          replyHref,
+        });
 
-  return (
-    <div key={cust} style={{ marginTop: 20, border: "1px solid #ccc", padding: 12 }}>
-      <label>
-        <input
-          type="checkbox"
-          checked={selected.has(cust)}
-          onChange={() => {
-            const next = new Set(selected);
-            next.has(cust) ? next.delete(cust) : next.add(cust);
-            setSelected(next);
-          }}
-        />
-        <strong>{cust}</strong> ({data.email || "no email"})
-      </label>
-      <details style={{ marginTop: 8 }}>
-        <summary>Preview</summary>
-        <div dangerouslySetInnerHTML={{ __html: previewHtml }} />
-      </details>
+        return (
+          <div key={cust} style={{ marginTop: 20, border: "1px solid #ccc", padding: 12 }}>
+            <label>
+              <input
+                type="checkbox"
+                checked={selected.has(cust)}
+                onChange={() => {
+                  const next = new Set(selected);
+                  next.has(cust) ? next.delete(cust) : next.add(cust);
+                  setSelected(next);
+                }}
+              />
+              <strong>{cust}</strong> ({data.email || "no email"})
+            </label>
+
+            <details style={{ marginTop: 8 }}>
+              <summary>Preview</summary>
+              <div dangerouslySetInnerHTML={{ __html: previewHtml }} />
+            </details>
+          </div>
+        );
+      })}
     </div>
   );
-})}
+}
+
