@@ -24,8 +24,23 @@ export default async function handler(req, res) {
 
     /* ---------------- helpers ---------------- */
     const asArray = (v) => (Array.isArray(v) ? v.filter(Boolean) : v ? [v] : []);
-    const money = (n) =>
-      (Number(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+// Formats 1234.5 -> "1,234.50"
+const num = (n) =>
+  (Number(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+// Always show as $X.XX (positive display)
+const cur = (n) => `$${num(Math.abs(Number(n) || 0))}`;
+
+// Always show as -$X.XX (for credits)
+const curNeg = (n) => `- $${num(Math.abs(Number(n) || 0))}`;
+
+// Preserve the sign (for things like Net Payable which could be negative in edge cases)
+const curSigned = (n) => {
+  const x = Number(n) || 0;
+  const a = num(Math.abs(x));
+  return x < 0 ? `- $${a}` : `$${a}`;
+};
+
     const safe = (v, d = "") => (v == null ? d : v);
 
     // Decode common HTML entities so subjects show real characters (', ", &, etc.)
@@ -77,8 +92,11 @@ export default async function handler(req, res) {
             .map((r) => {
               const inv = safe(r.inv);
               const due = safe(r.due);
-              const amt =
-                r.amt != null && typeof r.amt === "number" ? `$${money(r.amt)}` : safe(r.amt, "");
+             const amt =
+  r.amt != null && typeof r.amt === "number"
+    ? cur(r.amt)
+    : safe(r.amt, "");
+
               return `
                 <tr>
                   <td style="padding:10px;border-bottom:1px solid #e5e7eb;">${inv}</td>
@@ -107,10 +125,11 @@ export default async function handler(req, res) {
                 .map((cr) => {
                   const ref = safe(cr.ref);
                   const date = safe(cr.date);
-                  const amt =
-                    cr.amt != null && typeof cr.amt === "number"
-                      ? `$${money(Math.abs(cr.amt))}`
-                      : safe(cr.amt, "");
+const amt =
+  cr.amt != null && typeof cr.amt === "number"
+    ? curNeg(cr.amt)          // <- show as negative
+    : safe(cr.amt, "");
+
                   return `
                     <tr>
                       <td style="padding:10px 12px;border-bottom:1px solid #e5e7eb;">${ref}</td>
@@ -124,11 +143,15 @@ export default async function handler(req, res) {
         : "";
 
     // Totals
-    const totals = {
-      totalOverdue: typeof dyn.totalOverdue === "number" ? `$${money(dyn.totalOverdue)}` : dyn.totalOverdue,
-      totalCredits: typeof dyn.totalCredits === "number" ? `$${money(dyn.totalCredits)}` : dyn.totalCredits,
-      netPayable: typeof dyn.netPayable === "number" ? `$${money(dyn.netPayable)}` : dyn.netPayable,
-    };
+const totals = {
+  totalOverdue:
+    typeof dyn.totalOverdue === "number" ? cur(dyn.totalOverdue) : dyn.totalOverdue,
+  totalCredits:
+    typeof dyn.totalCredits === "number" ? curNeg(dyn.totalCredits) : dyn.totalCredits, // <- negative
+  netPayable:
+    typeof dyn.netPayable === "number" ? curSigned(dyn.netPayable) : dyn.netPayable,
+};
+
 
     // Inline CID logo (optional)
     const publicLogoUrl = process.env.LOGO_URL || "https://invoice-remind.vercel.app/logo.png";
