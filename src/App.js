@@ -167,7 +167,10 @@ function htmlEmailTemplate({
                 ${creditRows.length ? `Credits: ${money(totalCredits)}<br/>Net payable: ${money(netPayable)}` : ""}
               </div>
               ${creditSection}
-              <p>If you've already paid, please ignore this. Otherwise, please reply with your remittance advice.</p>
+              <p>If these invoices have already been paid, please ignore this reminder. 
+              </p>
+              </p>
+              Otherwise, kindly make prompt payment and send remittance advice to accounts@paramountliquor.com.au</p>
               <div style="margin:20px 0;">  
                 <a href="${replyHref}" style="background:${BRAND.accent};color:#fff;text-decoration:none;padding:10px 16px;border-radius:8px;font-weight:600;">Reply with remittance</a>  
                 <a href="https://www.paramountliquor.com.au/sign-in" 
