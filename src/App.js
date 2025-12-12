@@ -34,11 +34,6 @@ function toDate(v) {
   const d = new Date(v);
   return isNaN(d.getTime()) ? null : d;
 }
-function daysOverdue(due, base = new Date()) {
-  const d = toDate(due);
-  if (!d) return 0;
-  return Math.floor((base - d) / (1000 * 60 * 60 * 24));
-}
 function money(n) {
   const abs = Math.abs(Number(n) || 0).toLocaleString(undefined, {
     minimumFractionDigits: 2,
