@@ -17,6 +17,14 @@ const BRAND = {
 
 // Hosted logo for in-app preview (emails use CID via SendGrid backend)
 const PREVIEW_LOGO = "https://invoice-remind.vercel.app/logo.png";
+// Available SendGrid dynamic templates
+// Fallback SendGrid dynamic templates (used when we cannot fetch live from API)
+const TEMPLATE_OPTIONS = [
+  { id: "d-c32e5033436a4186a760c43071a0a103", label: "Overdue reminder (default)", subject: "Overdue Invoice Reminder" },
+  { id: "d-1e240fe428b34ae7b2df4d882c442c5c", label: "Upcoming due - 15 days to EOM", subject: "Upcoming Invoice Reminder - 15 days to EOM" },
+  { id: "d-d49dcda9f9ad48409f45d82be93f8be1", label: "Upcoming due - 30 days to EOM", subject: "Upcoming Invoice Reminder - 30 days to EOM" },
+  { id: "custom", label: "Custom template…", subject: "Invoice Reminder" },
+];
 
 // Fallback SendGrid dynamic templates (used when we cannot fetch live from API)
 const TEMPLATE_OPTIONS = [
@@ -49,6 +57,9 @@ function cleanNumber(v) {
   const n = Number(s || 0);
   return negative ? -n : n;
 }
+const getTemplateMeta = (id, options = TEMPLATE_OPTIONS) =>
+  options.find((opt) => opt.id === id) || options.find((opt) => opt.id === "custom") || {};
+
 
 const getTemplateMeta = (id, options = TEMPLATE_OPTIONS) =>
   options.find((opt) => opt.id === id) || options.find((opt) => opt.id === "custom") || {};
@@ -197,7 +208,7 @@ export default function App() {
   const [customTemplateId, setCustomTemplateId] = useState("");
   const [sending, setSending] = useState(false);
 
-  // Fetch live SendGrid templates (requires SENDGRID_API_KEY in the hosting environment)
+   // Fetch live SendGrid templates (requires SENDGRID_API_KEY in the hosting environment)
   useEffect(() => {
     let ignore = false;
 
@@ -217,15 +228,9 @@ export default function App() {
         });
 
         const withCustom = [...liveTemplates, TEMPLATE_OPTIONS.find((t) => t.id === "custom")];
-
-        if (!ignore && withCustom.length > 1) {
+        if (!ignore && withCustom.length) {
           setTemplateOptions(withCustom);
           setTemplateId(liveTemplates[0]?.id || TEMPLATE_OPTIONS[0].id);
-        } else if (!ignore) {
-          // If SendGrid returns no templates, fall back to the predefined list so users
-          // can still select a default option instead of being stuck with an empty dropdown.
-          setTemplateOptions(TEMPLATE_OPTIONS);
-          setTemplateId(TEMPLATE_OPTIONS[0].id);
         }
       } catch (err) {
         console.warn("Falling back to predefined template list", err);
@@ -282,9 +287,8 @@ export default function App() {
       alert("Enter a From address verified in SendGrid.");
       return;
     }
-    const chosenTemplateId =
+       const chosenTemplateId =
       templateId === "custom" ? customTemplateId.trim() : templateId;
-    const subjectTemplateId = templateId === "custom" ? "custom" : templateId;
     if (!chosenTemplateId) {
       alert("Select or enter a SendGrid dynamic template ID.");
       return;
@@ -310,7 +314,10 @@ export default function App() {
       if (overdueRows.length === 0 || netPayable <= 0) { skipped++; continue; }
 
       try {
-        const subject = buildSubjectLine(subjectTemplateId, templateOptions, name);
+        const subject = `Paramount Liquor - Invoice Payment Reminder - ${name}`;
+        const tmplMeta = getTemplateMeta(templateId, templateOptions);
+        const subjectContext = tmplMeta.subject || "Invoice Reminder";
+        const subject = `Paramount Liquor - ${subjectContext} - ${name}`;
 
         const res = await fetch("/api/sendgrid-send", {
           method: "POST",
@@ -319,7 +326,7 @@ export default function App() {
             to: data.email,
             from: sgFrom,
             replyTo: sgReplyTo || undefined,
-            templateId: chosenTemplateId,
+             templateId: chosenTemplateId,
             dynamicData: {
               customerName: name,
               overdueRows,
@@ -352,7 +359,7 @@ export default function App() {
       <div style={{ marginTop: 16 }}>
         <input placeholder="From (verified in SendGrid)" value={sgFrom} onChange={e => setSgFrom(e.target.value)} />
         <input placeholder="Reply-To (optional)" value={sgReplyTo} onChange={e => setSgReplyTo(e.target.value)} />
-        <div style={{ display: "inline-flex", gap: 8, alignItems: "center", marginLeft: 8 }}>
+ <div style={{ display: "inline-flex", gap: 8, alignItems: "center", marginLeft: 8 }}>
           <label>
             Template:
             <select
