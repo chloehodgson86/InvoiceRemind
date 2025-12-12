@@ -305,8 +305,9 @@ export default function App() {
 
       try {
         const tmplMeta = getTemplateMeta(templateId, templateOptions);
-        const subjectContext = tmplMeta.subject || "Invoice Reminder";
-        const subject = `Paramount Liquor - ${subjectContext} - ${name}`;
+        const subjectContext = (tmplMeta.subject || "Invoice Reminder").toString().trim() || "Invoice Reminder";
+        const subjectRaw = `Paramount Liquor - ${subjectContext} - ${name}`;
+        const subject = subjectRaw.trim() || "Paramount Liquor Invoice Reminder";
 
         const res = await fetch("/api/sendgrid-send", {
           method: "POST",

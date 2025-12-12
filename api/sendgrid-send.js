@@ -87,8 +87,8 @@ const curSigned = (n) => {
     // Build the subject in your requested format, de-encoding any entities first
     const nameText = decodeEntities(dyn.customerName || "Customer");
     const cleanedSubject = typeof dyn.subject === "string" ? decodeEntities(dyn.subject).trim() : "";
-    const computedSubject =
-      cleanedSubject || `Paramount Liquor - Overdue Invoice Reminder - ${nameText}`;
+    const computedSubjectRaw = cleanedSubject || `Paramount Liquor - Invoice Reminder - ${nameText}`;
+    const computedSubject = (computedSubjectRaw || "").toString().trim() || "Paramount Liquor Invoice Reminder";
 
     // Build reply mailto (uses the computed subject)
     const replyHref =
