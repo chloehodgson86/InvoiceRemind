@@ -27,17 +27,17 @@ const TEMPLATE_OPTIONS = [
   { id: "custom", label: "Custom template…", subject: "Invoice Reminder" },
 ];
 
+// Fallback SendGrid dynamic templates (used when we cannot fetch live from API)
+const TEMPLATE_OPTIONS = [
+  { id: "d-c32e5033436a4186a760c43071a0a103", label: "Overdue reminder (default)", subject: "Overdue Invoice Reminder" },
+  { id: "d-a0bf347c9f054340a0f1e41ec36f2f3c", label: "Upcoming due - 15 days to EOM", subject: "Upcoming Invoice Reminder - 15 days to EOM" },
+  { id: "d-1e3c9c13c9c948e6b7c6caa21fba1fbb", label: "Upcoming due - 30 days to EOM", subject: "Upcoming Invoice Reminder - 30 days to EOM" },
+  { id: "d-8f4c87f1e8aa4a17b4d182f025fe2a0c", label: "Generic invoice reminder", subject: "Invoice Reminder" },
+  // Provide an ASCII-only fallback label to avoid encoding issues during CI/CD parsing
+  { id: "custom", label: "Custom template...", subject: "Invoice Reminder" },
+];
+
 /* ---------------- Helpers ---------------- */
-function toDate(v) {
-  if (!v) return null;
-  const d = new Date(v);
-  return isNaN(d.getTime()) ? null : d;
-}
-function daysOverdue(due, base = new Date()) {
-  const d = toDate(due);
-  if (!d) return 0;
-  return Math.floor((base - d) / (1000 * 60 * 60 * 24));
-}
 function money(n) {
   const abs = Math.abs(Number(n) || 0).toLocaleString(undefined, {
     minimumFractionDigits: 2,
@@ -61,6 +61,17 @@ function cleanNumber(v) {
 const getTemplateMeta = (id, options = TEMPLATE_OPTIONS) =>
   options.find((opt) => opt.id === id) || options.find((opt) => opt.id === "custom") || {};
 
+
+const getTemplateMeta = (id, options = TEMPLATE_OPTIONS) =>
+  options.find((opt) => opt.id === id) || options.find((opt) => opt.id === "custom") || {};
+
+function buildSubjectLine(templateId, templateOptions, customerName) {
+  const tmplMeta = getTemplateMeta(templateId, templateOptions);
+  const subjectContext = (tmplMeta.subject || "Invoice Reminder").toString().trim() || "Invoice Reminder";
+  const subjectRaw = `Paramount Liquor - ${subjectContext} - ${customerName || "Customer"}`;
+  const subject = subjectRaw.trim();
+  return subject || "Paramount Liquor Invoice Reminder";
+}
 
 /* ---------------- CSV mapping ---------------- */
 const PRESETS = {
@@ -198,7 +209,7 @@ export default function App() {
   const [customTemplateId, setCustomTemplateId] = useState("");
   const [sending, setSending] = useState(false);
 
-   // Fetch live SendGrid templates (requires SENDGRID_API_KEY in the hosting environment)
+  // Fetch live SendGrid templates (requires SENDGRID_API_KEY in the hosting environment)
   useEffect(() => {
     let ignore = false;
 
@@ -277,8 +288,9 @@ export default function App() {
       alert("Enter a From address verified in SendGrid.");
       return;
     }
-       const chosenTemplateId =
+    const chosenTemplateId =
       templateId === "custom" ? customTemplateId.trim() : templateId;
+    const subjectTemplateId = templateId === "custom" ? "custom" : templateId;
     if (!chosenTemplateId) {
       alert("Select or enter a SendGrid dynamic template ID.");
       return;
@@ -304,10 +316,7 @@ export default function App() {
       if (overdueRows.length === 0 || netPayable <= 0) { skipped++; continue; }
 
       try {
-        const subject = `Paramount Liquor - Invoice Payment Reminder - ${name}`;
-        const tmplMeta = getTemplateMeta(templateId, templateOptions);
-        const subjectContext = tmplMeta.subject || "Invoice Reminder";
-        const subject = `Paramount Liquor - ${subjectContext} - ${name}`;
+        const subject = buildSubjectLine(subjectTemplateId, templateOptions, name);
 
         const res = await fetch("/api/sendgrid-send", {
           method: "POST",
@@ -316,7 +325,7 @@ export default function App() {
             to: data.email,
             from: sgFrom,
             replyTo: sgReplyTo || undefined,
-             templateId: chosenTemplateId,
+            templateId: chosenTemplateId,
             dynamicData: {
               customerName: name,
               overdueRows,
@@ -325,6 +334,8 @@ export default function App() {
               totalCredits: money(totalCredits),
               netPayable: money(netPayable),
               subject,
+              emailSubject: subject,
+              title: subject,
             },
             subject, // top-level subject for the email header
           }),
@@ -347,7 +358,7 @@ export default function App() {
       <div style={{ marginTop: 16 }}>
         <input placeholder="From (verified in SendGrid)" value={sgFrom} onChange={e => setSgFrom(e.target.value)} />
         <input placeholder="Reply-To (optional)" value={sgReplyTo} onChange={e => setSgReplyTo(e.target.value)} />
- <div style={{ display: "inline-flex", gap: 8, alignItems: "center", marginLeft: 8 }}>
+        <div style={{ display: "inline-flex", gap: 8, alignItems: "center", marginLeft: 8 }}>
           <label>
             Template:
             <select
@@ -390,7 +401,7 @@ export default function App() {
         // Skip accounts with no amount owing in the list UI
         if (overdueRows.length === 0 || netPayable <= 0) return null;
 
-        const subject = `Paramount Liquor - Overdue Invoices - ${cust}`;
+        const subject = buildSubjectLine(templateId, templateOptions, cust);
         const replyHref = sgReplyTo
           ? `mailto:${encodeURIComponent(sgReplyTo)}?subject=${encodeURIComponent(subject)}`
           : `mailto:accounts@paramountliquor.com.au?subject=${encodeURIComponent(subject)}`;
