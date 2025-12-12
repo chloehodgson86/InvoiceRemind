@@ -29,11 +29,6 @@ const TEMPLATE_OPTIONS = [
 ];
 
 /* ---------------- Helpers ---------------- */
-function toDate(v) {
-  if (!v) return null;
-  const d = new Date(v);
-  return isNaN(d.getTime()) ? null : d;
-}
 function money(n) {
   const abs = Math.abs(Number(n) || 0).toLocaleString(undefined, {
     minimumFractionDigits: 2,
