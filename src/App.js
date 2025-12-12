@@ -18,17 +18,17 @@ const BRAND = {
 // Hosted logo for in-app preview (emails use CID via SendGrid backend)
 const PREVIEW_LOGO = "https://invoice-remind.vercel.app/logo.png";
 
+// Fallback SendGrid dynamic templates (used when we cannot fetch live from API)
+const TEMPLATE_OPTIONS = [
+  { id: "d-c32e5033436a4186a760c43071a0a103", label: "Overdue reminder (default)", subject: "Overdue Invoice Reminder" },
+  { id: "d-a0bf347c9f054340a0f1e41ec36f2f3c", label: "Upcoming due - 15 days to EOM", subject: "Upcoming Invoice Reminder - 15 days to EOM" },
+  { id: "d-1e3c9c13c9c948e6b7c6caa21fba1fbb", label: "Upcoming due - 30 days to EOM", subject: "Upcoming Invoice Reminder - 30 days to EOM" },
+  { id: "d-8f4c87f1e8aa4a17b4d182f025fe2a0c", label: "Generic invoice reminder", subject: "Invoice Reminder" },
+  // Provide an ASCII-only fallback label to avoid encoding issues during CI/CD parsing
+  { id: "custom", label: "Custom template...", subject: "Invoice Reminder" },
+];
+
 /* ---------------- Helpers ---------------- */
-function toDate(v) {
-  if (!v) return null;
-  const d = new Date(v);
-  return isNaN(d.getTime()) ? null : d;
-}
-function daysOverdue(due, base = new Date()) {
-  const d = toDate(due);
-  if (!d) return 0;
-  return Math.floor((base - d) / (1000 * 60 * 60 * 24));
-}
 function money(n) {
   const abs = Math.abs(Number(n) || 0).toLocaleString(undefined, {
     minimumFractionDigits: 2,
@@ -48,6 +48,17 @@ function cleanNumber(v) {
   else if (s.includes(",") && !s.includes(".")) s = s.replace(/,/g, ".");
   const n = Number(s || 0);
   return negative ? -n : n;
+}
+
+const getTemplateMeta = (id, options = TEMPLATE_OPTIONS) =>
+  options.find((opt) => opt.id === id) || options.find((opt) => opt.id === "custom") || {};
+
+function buildSubjectLine(templateId, templateOptions, customerName) {
+  const tmplMeta = getTemplateMeta(templateId, templateOptions);
+  const subjectContext = (tmplMeta.subject || "Invoice Reminder").toString().trim() || "Invoice Reminder";
+  const subjectRaw = `Paramount Liquor - ${subjectContext} - ${customerName || "Customer"}`;
+  const subject = subjectRaw.trim();
+  return subject || "Paramount Liquor Invoice Reminder";
 }
 
 /* ---------------- CSV mapping ---------------- */
@@ -181,7 +192,50 @@ export default function App() {
   const [selected, setSelected] = useState(new Set());
   const [sgFrom, setSgFrom] = useState("");
   const [sgReplyTo, setSgReplyTo] = useState("");
+  const [templateOptions, setTemplateOptions] = useState(TEMPLATE_OPTIONS);
+  const [templateId, setTemplateId] = useState(TEMPLATE_OPTIONS[0].id);
+  const [customTemplateId, setCustomTemplateId] = useState("");
   const [sending, setSending] = useState(false);
+
+  // Fetch live SendGrid templates (requires SENDGRID_API_KEY in the hosting environment)
+  useEffect(() => {
+    let ignore = false;
+
+    async function loadTemplates() {
+      try {
+        const res = await fetch("/api/sendgrid-templates");
+        if (!res.ok) throw new Error(`Failed to fetch templates (${res.status})`);
+        const data = await res.json();
+        const liveTemplates = (data.templates || []).map((tmpl) => {
+          const subject = tmpl.version?.subject || "Invoice Reminder";
+          const versionName = tmpl.version?.name ? ` – ${tmpl.version.name}` : "";
+          return {
+            id: tmpl.id,
+            label: `${tmpl.name || tmpl.id}${versionName}`,
+            subject,
+          };
+        });
+
+        const withCustom = [...liveTemplates, TEMPLATE_OPTIONS.find((t) => t.id === "custom")];
+
+        if (!ignore && withCustom.length > 1) {
+          setTemplateOptions(withCustom);
+          setTemplateId(liveTemplates[0]?.id || TEMPLATE_OPTIONS[0].id);
+        } else if (!ignore) {
+          // If SendGrid returns no templates, fall back to the predefined list so users
+          // can still select a default option instead of being stuck with an empty dropdown.
+          setTemplateOptions(TEMPLATE_OPTIONS);
+          setTemplateId(TEMPLATE_OPTIONS[0].id);
+        }
+      } catch (err) {
+        console.warn("Falling back to predefined template list", err);
+        if (!ignore) setTemplateOptions(TEMPLATE_OPTIONS);
+      }
+    }
+
+    loadTemplates();
+    return () => { ignore = true; };
+  }, []);
 
   // Parse CSV
   function handleUpload(e) {
@@ -228,6 +282,13 @@ export default function App() {
       alert("Enter a From address verified in SendGrid.");
       return;
     }
+    const chosenTemplateId =
+      templateId === "custom" ? customTemplateId.trim() : templateId;
+    const subjectTemplateId = templateId === "custom" ? "custom" : templateId;
+    if (!chosenTemplateId) {
+      alert("Select or enter a SendGrid dynamic template ID.");
+      return;
+    }
     setSending(true);
     let ok = 0, fail = 0, skipped = 0;
 
@@ -249,7 +310,7 @@ export default function App() {
       if (overdueRows.length === 0 || netPayable <= 0) { skipped++; continue; }
 
       try {
-        const subject = `Paramount Liquor - Overdue Invoices - ${name}`;
+        const subject = buildSubjectLine(subjectTemplateId, templateOptions, name);
 
         const res = await fetch("/api/sendgrid-send", {
           method: "POST",
@@ -258,7 +319,7 @@ export default function App() {
             to: data.email,
             from: sgFrom,
             replyTo: sgReplyTo || undefined,
-            templateId: "d-c32e5033436a4186a760c43071a0a103",
+            templateId: chosenTemplateId,
             dynamicData: {
               customerName: name,
               overdueRows,
@@ -267,6 +328,8 @@ export default function App() {
               totalCredits: money(totalCredits),
               netPayable: money(netPayable),
               subject,
+              emailSubject: subject,
+              title: subject,
             },
             subject, // top-level subject for the email header
           }),
@@ -279,7 +342,7 @@ export default function App() {
     }
     setSending(false);
     alert(`Done. Success: ${ok}, Fail: ${fail}, Skipped: ${skipped}`);
-  }, [selected, customerData, map, sgFrom, sgReplyTo]);
+  }, [selected, customerData, map, sgFrom, sgReplyTo, templateId, customTemplateId, templateOptions]);
 
   return (
     <div style={{ padding: 20 }}>
@@ -289,6 +352,27 @@ export default function App() {
       <div style={{ marginTop: 16 }}>
         <input placeholder="From (verified in SendGrid)" value={sgFrom} onChange={e => setSgFrom(e.target.value)} />
         <input placeholder="Reply-To (optional)" value={sgReplyTo} onChange={e => setSgReplyTo(e.target.value)} />
+        <div style={{ display: "inline-flex", gap: 8, alignItems: "center", marginLeft: 8 }}>
+          <label>
+            Template:
+            <select
+              value={templateId}
+              onChange={e => setTemplateId(e.target.value)}
+              style={{ marginLeft: 6 }}
+            >
+              {templateOptions.map(opt => (
+                <option key={opt.id} value={opt.id}>{opt.label}</option>
+              ))}
+            </select>
+          </label>
+          {templateId === "custom" && (
+            <input
+              placeholder="SendGrid template ID (d-...)"
+              value={customTemplateId}
+              onChange={e => setCustomTemplateId(e.target.value)}
+            />
+          )}
+        </div>
         <button disabled={!selected.size || sending} onClick={sendSelectedViaSendGrid}>
           {sending ? "Sending..." : `Send ${selected.size} via SendGrid`}
         </button>
@@ -311,7 +395,7 @@ export default function App() {
         // Skip accounts with no amount owing in the list UI
         if (overdueRows.length === 0 || netPayable <= 0) return null;
 
-        const subject = `Paramount Liquor - Overdue Invoices - ${cust}`;
+        const subject = buildSubjectLine(templateId, templateOptions, cust);
         const replyHref = sgReplyTo
           ? `mailto:${encodeURIComponent(sgReplyTo)}?subject=${encodeURIComponent(subject)}`
           : `mailto:accounts@paramountliquor.com.au?subject=${encodeURIComponent(subject)}`;
