@@ -17,6 +17,15 @@ const BRAND = {
 
 // Hosted logo for in-app preview (emails use CID via SendGrid backend)
 const PREVIEW_LOGO = "https://invoice-remind.vercel.app/logo.png";
+// Available SendGrid dynamic templates
+// Fallback SendGrid dynamic templates (used when we cannot fetch live from API)
+const TEMPLATE_OPTIONS = [
+  { id: "d-c32e5033436a4186a760c43071a0a103", label: "Overdue reminder (default)", subject: "Overdue Invoice Reminder" },
+  { id: "d-a0bf347c9f054340a0f1e41ec36f2f3c", label: "Upcoming due - 15 days to EOM", subject: "Upcoming Invoice Reminder - 15 days to EOM" },
+  { id: "d-1e3c9c13c9c948e6b7c6caa21fba1fbb", label: "Upcoming due - 30 days to EOM", subject: "Upcoming Invoice Reminder - 30 days to EOM" },
+  { id: "d-8f4c87f1e8aa4a17b4d182f025fe2a0c", label: "Generic invoice reminder", subject: "Invoice Reminder" },
+  { id: "custom", label: "Custom template…", subject: "Invoice Reminder" },
+];
 
 // Fallback SendGrid dynamic templates (used when we cannot fetch live from API)
 const TEMPLATE_OPTIONS = [
@@ -49,6 +58,9 @@ function cleanNumber(v) {
   const n = Number(s || 0);
   return negative ? -n : n;
 }
+const getTemplateMeta = (id, options = TEMPLATE_OPTIONS) =>
+  options.find((opt) => opt.id === id) || options.find((opt) => opt.id === "custom") || {};
+
 
 const getTemplateMeta = (id, options = TEMPLATE_OPTIONS) =>
   options.find((opt) => opt.id === id) || options.find((opt) => opt.id === "custom") || {};
