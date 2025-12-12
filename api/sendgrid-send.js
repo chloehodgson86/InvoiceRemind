@@ -86,8 +86,9 @@ const curSigned = (n) => {
 
     // Build the subject in your requested format, de-encoding any entities first
     const nameText = decodeEntities(dyn.customerName || "Customer");
+    const cleanedSubject = typeof dyn.subject === "string" ? decodeEntities(dyn.subject).trim() : "";
     const computedSubject =
-      dyn.subject || `Paramount Liquor - Overdue Invoice Reminder - ${nameText}`;
+      cleanedSubject || `Paramount Liquor - Overdue Invoice Reminder - ${nameText}`;
 
     // Build reply mailto (uses the computed subject)
     const replyHref =
@@ -218,6 +219,9 @@ const totals = {
       ...(inlineLogoAttachment ? { attachments: [inlineLogoAttachment] } : {}),
       personalizations: [personalization],
       template_id: templateId,
+      // Include a subject at the top level so the header is always populated,
+      // even if the dynamic template Subject is blank or ignored.
+      subject: computedSubject,
     };
 
     const resp = await fetch("https://api.sendgrid.com/v3/mail/send", {
