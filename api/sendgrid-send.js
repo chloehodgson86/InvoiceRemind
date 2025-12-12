@@ -33,33 +33,35 @@ export default async function handler(req, res) {
 
     /* ---------------- helpers ---------------- */
     const asArray = (v) => (Array.isArray(v) ? v.filter(Boolean) : v ? [v] : []);
-// Formats 1234.5 -> "1,234.50"
-const num = (n) =>
-  (Number(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-// Always show as $X.XX (positive display)
-const cur = (n) => `$${num(Math.abs(Number(n) || 0))}`;
+    // Formats 1234.5 -> "1,234.50"
+    const num = (n) =>
+      (Number(n) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-// Always show as -$X.XX (for credits)
-const curNeg = (n) => `- $${num(Math.abs(Number(n) || 0))}`;
-// Coerce numbers from strings like "$1,234.56", "1,234.56", "(123.45)"
-const toNum = (v) => {
-  if (typeof v === "number") return v;
-  if (v == null) return 0;
-  let s = String(v).trim();
-  const neg = /^\(.*\)$/.test(s);   // (123.45) -> negative
-  if (neg) s = s.slice(1, -1);
-  s = s.replace(/[$,\s]/g, "");     // remove $, commas, spaces
-  const n = Number(s);
-  return (neg ? -1 : 1) * (isNaN(n) ? 0 : n);
-};
+    // Always show as $X.XX (positive display)
+    const cur = (n) => `$${num(Math.abs(Number(n) || 0))}`;
 
-// Preserve the sign (for things like Net Payable which could be negative in edge cases)
-const curSigned = (n) => {
-  const x = Number(n) || 0;
-  const a = num(Math.abs(x));
-  return x < 0 ? `- $${a}` : `$${a}`;
-};
+    // Always show as -$X.XX (for credits)
+    const curNeg = (n) => `- $${num(Math.abs(Number(n) || 0))}`;
+
+    // Coerce numbers from strings like "$1,234.56", "1,234.56", "(123.45)"
+    const toNum = (v) => {
+      if (typeof v === "number") return v;
+      if (v == null) return 0;
+      let s = String(v).trim();
+      const neg = /^\(.*\)$/.test(s); // (123.45) -> negative
+      if (neg) s = s.slice(1, -1);
+      s = s.replace(/[$,\s]/g, ""); // remove $, commas, spaces
+      const n = Number(s);
+      return (neg ? -1 : 1) * (isNaN(n) ? 0 : n);
+    };
+
+    // Preserve the sign (for things like Net Payable which could be negative in edge cases)
+    const curSigned = (n) => {
+      const x = Number(n) || 0;
+      const a = num(Math.abs(x));
+      return x < 0 ? `- $${a}` : `$${a}`;
+    };
 
     const safe = (v, d = "") => (v == null ? d : v);
 
@@ -118,10 +120,10 @@ const curSigned = (n) => {
             .map((r) => {
               const inv = safe(r.inv);
               const due = safe(r.due);
-             const amt =
-  r.amt != null && typeof r.amt === "number"
-    ? cur(r.amt)
-    : safe(r.amt, "");
+              const amt =
+                r.amt != null && typeof r.amt === "number"
+                  ? cur(r.amt)
+                  : safe(r.amt, "");
 
               return `
                 <tr>
@@ -151,10 +153,10 @@ const curSigned = (n) => {
                 .map((cr) => {
                   const ref = safe(cr.ref);
                   const date = safe(cr.date);
-const amt =
-  cr.amt != null && typeof cr.amt === "number"
-    ? curNeg(cr.amt)          // <- show as negative
-    : safe(cr.amt, "");
+                  const amt =
+                    cr.amt != null && typeof cr.amt === "number"
+                      ? curNeg(cr.amt) // <- show as negative
+                      : safe(cr.amt, "");
 
                   return `
                     <tr>
@@ -169,14 +171,11 @@ const amt =
         : "";
 
     // Totals
-const totals = {
-  totalOverdue:
-    dyn.totalOverdue == null ? "" : cur(toNum(dyn.totalOverdue)),
-  totalCredits:
-    dyn.totalCredits == null ? "" : curNeg(toNum(dyn.totalCredits)), // ← always negative
-  netPayable:
-    dyn.netPayable == null ? "" : curSigned(toNum(dyn.netPayable)),
-};
+    const totals = {
+      totalOverdue: dyn.totalOverdue == null ? "" : cur(toNum(dyn.totalOverdue)),
+      totalCredits: dyn.totalCredits == null ? "" : curNeg(toNum(dyn.totalCredits)), // ← always negative
+      netPayable: dyn.netPayable == null ? "" : curSigned(toNum(dyn.netPayable)),
+    };
 
 
 
