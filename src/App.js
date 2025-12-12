@@ -278,6 +278,7 @@ export default function App() {
     }
     const chosenTemplateId =
       templateId === "custom" ? customTemplateId.trim() : templateId;
+    const subjectTemplateId = templateId === "custom" ? "custom" : templateId;
     if (!chosenTemplateId) {
       alert("Select or enter a SendGrid dynamic template ID.");
       return;
@@ -303,7 +304,7 @@ export default function App() {
       if (overdueRows.length === 0 || netPayable <= 0) { skipped++; continue; }
 
       try {
-        const subject = buildSubjectLine(templateId, templateOptions, name);
+        const subject = buildSubjectLine(subjectTemplateId, templateOptions, name);
 
         const res = await fetch("/api/sendgrid-send", {
           method: "POST",
