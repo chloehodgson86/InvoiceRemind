@@ -62,6 +62,14 @@ function cleanNumber(v) {
 const getTemplateMeta = (id, options = TEMPLATE_OPTIONS) =>
   options.find((opt) => opt.id === id) || options.find((opt) => opt.id === "custom") || {};
 
+function buildSubjectLine(templateId, templateOptions, customerName) {
+  const tmplMeta = getTemplateMeta(templateId, templateOptions);
+  const subjectContext = (tmplMeta.subject || "Invoice Reminder").toString().trim() || "Invoice Reminder";
+  const subjectRaw = `Paramount Liquor - ${subjectContext} - ${customerName || "Customer"}`;
+  const subject = subjectRaw.trim();
+  return subject || "Paramount Liquor Invoice Reminder";
+}
+
 /* ---------------- CSV mapping ---------------- */
 const PRESETS = {
   customer: ["customer", "customer name", "account name", "client", "trading name"],
@@ -304,10 +312,7 @@ export default function App() {
       if (overdueRows.length === 0 || netPayable <= 0) { skipped++; continue; }
 
       try {
-        const tmplMeta = getTemplateMeta(templateId, templateOptions);
-        const subjectContext = (tmplMeta.subject || "Invoice Reminder").toString().trim() || "Invoice Reminder";
-        const subjectRaw = `Paramount Liquor - ${subjectContext} - ${name}`;
-        const subject = subjectRaw.trim() || "Paramount Liquor Invoice Reminder";
+        const subject = buildSubjectLine(templateId, templateOptions, name);
 
         const res = await fetch("/api/sendgrid-send", {
           method: "POST",
@@ -325,6 +330,8 @@ export default function App() {
               totalCredits: money(totalCredits),
               netPayable: money(netPayable),
               subject,
+              emailSubject: subject,
+              title: subject,
             },
             subject, // top-level subject for the email header
           }),
@@ -390,7 +397,7 @@ export default function App() {
         // Skip accounts with no amount owing in the list UI
         if (overdueRows.length === 0 || netPayable <= 0) return null;
 
-        const subject = `Paramount Liquor - Overdue Invoices - ${cust}`;
+        const subject = buildSubjectLine(templateId, templateOptions, cust);
         const replyHref = sgReplyTo
           ? `mailto:${encodeURIComponent(sgReplyTo)}?subject=${encodeURIComponent(subject)}`
           : `mailto:accounts@paramountliquor.com.au?subject=${encodeURIComponent(subject)}`;
