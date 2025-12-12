@@ -9,10 +9,19 @@ export default async function handler(req, res) {
       {};
 
     const {
-      to, from, replyTo, bcc, templateId,
+      to,
+      from,
+      replyTo,
+      bcc,
+      templateId,
       subject: rawSubject,
       dynamicData = {},
-      customerName, overdueRows, creditRows, totalOverdue, totalCredits, netPayable,
+      customerName,
+      overdueRows,
+      creditRows,
+      totalOverdue,
+      totalCredits,
+      netPayable,
     } = body;
 
     if (!to || !from || !templateId) {
@@ -82,12 +91,18 @@ const curSigned = (n) => {
       payNowUrl: safe(dynamicData.payNowUrl, "https://www.paramountliquor.com.au/sign-in"),
       replyHref: dynamicData.replyHref,
       subject: safe(dynamicData.subject, rawSubject), // may be provided; else we compute below
+      emailSubject: dynamicData.emailSubject,
+      title: dynamicData.title,
     };
 
     // Build the subject in your requested format, de-encoding any entities first
     const nameText = decodeEntities(dyn.customerName || "Customer");
-    const computedSubject =
-      dyn.subject || `Paramount Liquor - Overdue Invoice Reminder - ${nameText}`;
+    const subjectCandidates = [dyn.subject, dyn.emailSubject, dyn.title].filter((s) => typeof s === "string");
+    const cleanedSubject = subjectCandidates
+      .map((s) => decodeEntities(s).trim())
+      .find((s) => Boolean(s)) || "";
+    const computedSubjectRaw = cleanedSubject || `Paramount Liquor - Invoice Reminder - ${nameText}`;
+    const computedSubject = (computedSubjectRaw || "").toString().trim() || "Paramount Liquor Invoice Reminder";
 
     // Build reply mailto (uses the computed subject)
     const replyHref =
@@ -204,6 +219,8 @@ const totals = {
         payNowUrl: dyn.payNowUrl,
         replyHref,
         subject: computedSubject,   // <- used by {{subject}} in the template Subject field
+        emailSubject: computedSubject,
+        title: computedSubject,
         year: new Date().getFullYear(),
       },
     };
@@ -218,6 +235,9 @@ const totals = {
       ...(inlineLogoAttachment ? { attachments: [inlineLogoAttachment] } : {}),
       personalizations: [personalization],
       template_id: templateId,
+      // Include a subject at the top level so the header is always populated,
+      // even if the dynamic template Subject is blank or ignored.
+      subject: computedSubject,
     };
 
     const resp = await fetch("https://api.sendgrid.com/v3/mail/send", {
