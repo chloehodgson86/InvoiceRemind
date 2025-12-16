@@ -267,6 +267,10 @@ export default function App() {
     }
     return { all: Array.from(byName.keys()), byName };
   }, [rows, map]);
+const selectAllEmails = () => {
+  const all = new Set(customerData.all);
+  setSelected(all);
+};
 
   /* -------------- Send via SendGrid Dynamic Template -------------- */
   const sendSelectedViaSendGrid = useCallback(async () => {
