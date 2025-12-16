@@ -310,28 +310,30 @@ const selectAllEmails = () => {
       
         const tmplMeta = getTemplateMeta(templateId, templateOptions);
         const subjectContext = tmplMeta.subject || "Invoice Reminder";
-        const subject = `Paramount Liquor - ${subjectContext} - ${name}`;
+      const emailSubject = `Paramount Liquor - ${subjectContext} - ${name}`;
 
-        const res = await fetch("/api/sendgrid-send", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            to: data.email,
-            from: sgFrom,
-            replyTo: sgReplyTo || undefined,
-             templateId: chosenTemplateId,
-            dynamicData: {
-              customerName: name,
-              overdueRows,
-              creditRows,
-              totalOverdue: money(totalOverdue),
-              totalCredits: money(totalCredits),
-              netPayable: money(netPayable),
-              subject,
-            },
-            subject, // top-level subject for the email header
-          }),
-        });
+
+      const res = await fetch("/api/sendgrid-send", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    to: data.email,
+    from: sgFrom,
+    replyTo: sgReplyTo || undefined,
+    templateId: chosenTemplateId,
+    dynamicData: {
+      customerName: name,
+      overdueRows,
+      creditRows,
+      totalOverdue: money(totalOverdue),
+      totalCredits: money(totalCredits),
+      netPayable: money(netPayable),
+      subject: emailSubject,
+    },
+    subject: emailSubject, // top-level subject for the email header
+  }),
+});
+
         if (res.ok) ok++; else fail++;
       } catch {
         fail++;
