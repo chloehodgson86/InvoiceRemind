@@ -371,11 +371,19 @@ const selectAllEmails = () => {
             />
           )}
         </div>
-        <button disabled={!selected.size || sending} onClick={sendSelectedViaSendGrid}>
-          {sending ? "Sending..." : `Send ${selected.size} via SendGrid`}
-        </button>
-      </div>
+          <button
+  type="button"
+  onClick={selectAllEmails}
+  style={{ marginRight: 8 }}
+>
+  Select all emails
+</button>
 
+<button disabled={!selected.size || sending} onClick={sendSelectedViaSendGrid}>
+  {sending ? "Sending..." : `Send ${selected.size} via SendGrid`}
+</button>
+</div>
+   
       {customerData.all.map(cust => {
         const data = customerData.byName.get(cust);
         if (!data) return null;
