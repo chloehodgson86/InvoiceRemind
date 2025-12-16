@@ -272,6 +272,32 @@ const selectAllEmails = () => {
   setSelected(all);
 };
 
+  const visibleCustomers = useMemo(() => {
+    return customerData.all.filter(cust => {
+      const data = customerData.byName.get(cust);
+      if (!data) return false;
+
+      const custRows = data.rows;
+      const overdueRows = custRows.filter(r => cleanNumber(r[map.amount]) > 0);
+      const creditRows = custRows.filter(r => cleanNumber(r[map.amount]) < 0);
+      const totalOverdue = overdueRows.reduce((s, r) => s + cleanNumber(r[map.amount]), 0);
+      const totalCredits = creditRows.reduce((s, r) => s + Math.abs(cleanNumber(r[map.amount])), 0);
+      const netPayable = totalOverdue - totalCredits;
+
+      return overdueRows.length > 0 && netPayable > 0;
+    });
+  }, [customerData, map]);
+
+  useEffect(() => {
+    setSelected(prev => {
+      const next = new Set();
+      for (const cust of visibleCustomers) {
+        if (prev.has(cust)) next.add(cust);
+      }
+      return next;
+    });
+  }, [visibleCustomers]);
+
   /* -------------- Send via SendGrid Dynamic Template -------------- */
   const sendSelectedViaSendGrid = useCallback(async () => {
     const list = Array.from(selected);
@@ -342,6 +368,11 @@ const selectAllEmails = () => {
     alert(`Done. Success: ${ok}, Fail: ${fail}, Skipped: ${skipped}`);
   }, [selected, customerData, map, sgFrom, sgReplyTo, templateId, customTemplateId, templateOptions]);
 
+  const allVisibleSelected = visibleCustomers.length > 0 && selected.size === visibleCustomers.length;
+  const toggleAllVisible = () => {
+    setSelected(allVisibleSelected ? new Set() : new Set(visibleCustomers));
+  };
+
   return (
     <div style={{ padding: 20 }}>
       <h1>Overdue Invoice Reminder Generator</h1>
@@ -374,9 +405,12 @@ const selectAllEmails = () => {
         <button disabled={!selected.size || sending} onClick={sendSelectedViaSendGrid}>
           {sending ? "Sending..." : `Send ${selected.size} via SendGrid`}
         </button>
+        <button onClick={toggleAllVisible} disabled={!visibleCustomers.length} style={{ marginLeft: 8 }}>
+          {allVisibleSelected ? "Clear all" : "Select all"} ({visibleCustomers.length})
+        </button>
       </div>
 
-      {customerData.all.map(cust => {
+      {visibleCustomers.map(cust => {
         const data = customerData.byName.get(cust);
         if (!data) return null;
 
