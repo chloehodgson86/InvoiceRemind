@@ -307,7 +307,7 @@ const selectAllEmails = () => {
       if (overdueRows.length === 0 || netPayable <= 0) { skipped++; continue; }
 
       try {
-        const subject = `Paramount Liquor - Invoice Payment Reminder - ${name}`;
+      
         const tmplMeta = getTemplateMeta(templateId, templateOptions);
         const subjectContext = tmplMeta.subject || "Invoice Reminder";
         const subject = `Paramount Liquor - ${subjectContext} - ${name}`;
