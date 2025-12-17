@@ -433,10 +433,20 @@ const selectAllEmails = () => {
               <strong>{cust}</strong> ({data.email || "no email"})
             </label>
 
-            <details style={{ marginTop: 8 }}>
-              <summary>Preview</summary>
-              <div dangerouslySetInnerHTML={{ __html: previewHtml }} />
-            </details>
+<div style={{ marginTop: 12 }}>
+  <div
+    style={{
+      maxHeight: 500,
+      overflow: "auto",
+      border: "1px solid #e5e7eb",
+      borderRadius: 8,
+      background: "#fff",
+      padding: 12,
+    }}
+    dangerouslySetInnerHTML={{ __html: previewHtml }}
+  />
+</div>
+
           </div>
         );
       })}
