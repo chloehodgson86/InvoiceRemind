@@ -203,13 +203,14 @@ const totals = {
         netPayable: totals.netPayable ?? "",
         payNowUrl: dyn.payNowUrl,
         replyHref,
-        subject: computedSubject,   // <- used by {{subject}} in the template Subject field
+
         year: new Date().getFullYear(),
       },
     };
 
     const payload = {
       from: typeof from === "string" ? { email: from } : { email: from.email, ...(from.name ? { name: from.name } : {}) },
+      subject: computedSubject,
       ...(replyTo
         ? typeof replyTo === "string"
           ? { reply_to: { email: replyTo } }
