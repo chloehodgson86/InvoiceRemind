@@ -1,7 +1,56 @@
 // App.js
 import React, { useMemo, useState, useEffect, useCallback } from "react";
 import Papa from "papaparse";
+const REQUIRED_FIELDS = {
+  customerId: ["customer id", "customerid", "ar account id", "account id"],
+  customerName: ["customer name", "customer", "name"],
+  email: ["email", "email address", "accounts email"],
+  invoice: ["invoice", "invoice id", "invoice number"],
+  amount: ["amount", "total amount", "balance"],
+  dueDate: ["due date", "duedate"]
+};
 
+const OPTIONAL_FIELDS = {
+  terms: ["terms", "credit terms"],
+  chain: ["chain", "group account - chain", "group"],
+  status: ["status", "account status"]
+};
+
+function normaliseHeader(header) {
+  return String(header || "").toLowerCase().trim().replace(/\s+/g, " ");
+}
+
+function detectColumns(headers) {
+  const detected = {};
+  const allFields = { ...REQUIRED_FIELDS, ...OPTIONAL_FIELDS };
+
+  Object.entries(allFields).forEach(([field, aliases]) => {
+    const match = headers.find(header =>
+      aliases.includes(normaliseHeader(header))
+    );
+    if (match) detected[field] = match;
+  });
+
+  return detected;
+}
+
+function validateHeaders(detected) {
+  return Object.keys(REQUIRED_FIELDS).filter(field => !detected[field]);
+}
+
+function mapRows(rows, detected) {
+  return rows.map(row => ({
+    customerId: row[detected.customerId],
+    customerName: row[detected.customerName],
+    email: row[detected.email],
+    invoice: row[detected.invoice],
+    amount: Number(String(row[detected.amount]).replace(/[$,]/g, "")) || 0,
+    dueDate: row[detected.dueDate],
+    terms: detected.terms ? row[detected.terms] : "",
+    chain: detected.chain ? row[detected.chain] : "",
+    status: detected.status ? row[detected.status] : ""
+  }));
+}
 /* ---------------- Branding ---------------- */
 const BRAND = {
   name: "Paramount Liquor",
